@@ -1,4 +1,5 @@
 #include "gdt.h"
+#include "idt.h"
 #include "io.h"
 #include "keycodes.h"
 #include "terminal.h"
@@ -21,6 +22,7 @@ extern "C" { /* Use C linkage for kernel_main. */
 // entry-point
 void kernelMain() {
 	GDT::init();
+	IDT::init();
 
 	u8 c = IO::getScanCode();
 	/* Initialize terminal interface */
