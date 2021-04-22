@@ -75,6 +75,7 @@ _start:
 	C++ features such as global constructors and exceptions will require
 	runtime support to work as well.
 	*/
+	/* kernelMain does that by calling appropriate functions */
 
 	/*
 	Enter the high-level kernel. The ABI requires the stack is 16-byte
@@ -84,7 +85,7 @@ _start:
 	stack since (pushed 0 bytes so far) and the alignment is thus
 	preserved and the call is well defined.
 	*/
-	call kernel_main
+	call kernelMain
 
 	/*
 	If the system has nothing more to do, put the computer into an
@@ -101,6 +102,23 @@ _start:
 	cli
 1:	hlt
 	jmp 1b
+
+.extern __gdtptr
+.global gdtFlush
+
+gdtFlush:
+    lgdt  (__gdtptr)
+   /* Reload CS register containing code selector */
+   jmp   $0x08,$reload_CS /* 0x08 points at the new code selector */
+reload_CS:
+   /* Reload data segment registers */
+   mov   $0x10, %ax /* 0x10 points at the new data selector */
+   mov   %ax, %ds
+   mov   %ax, %es
+   mov   %ax, %fs
+   mov   %ax, %gs
+   mov   %ax, %ss
+   ret
 
 /*
 Set the size of the _start symbol to the current location '.' minus its start.

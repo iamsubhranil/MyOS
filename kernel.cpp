@@ -1,3 +1,4 @@
+#include "gdt.h"
 #include "io.h"
 #include "keycodes.h"
 #include "terminal.h"
@@ -18,13 +19,16 @@ extern "C" { /* Use C linkage for kernel_main. */
 #endif
 
 // entry-point
-void kernel_main(void) {
+void kernelMain() {
+	GDT::init();
+
+	u8 c = IO::getScanCode();
 	/* Initialize terminal interface */
 	Terminal terminal;
 
 	/* Newline support is left as an exercise. */
 	terminal.write("\nEnter a key : \n");
-	u8 c    = IO::getScanCode();
+	c       = IO::getScanCode();
 	u8 oldc = 0x00;
 	while(1) {
 		if(oldc != c) {
