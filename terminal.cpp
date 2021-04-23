@@ -2,7 +2,13 @@
 #include "string.h"
 #include "vga.h"
 
-Terminal::Terminal() {
+u16        Terminal::row    = 0;
+u16        Terminal::column = 0;
+VGA::Color Terminal::color =
+    VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
+u16 *Terminal::buffer = 0;
+
+void Terminal::init() {
 	row    = 0;
 	column = 0;
 	color  = VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
@@ -15,16 +21,21 @@ Terminal::Terminal() {
 	}
 }
 
-void Terminal::setColor(u8 c) {
+void Terminal::setColor(VGA::Color c) {
 	color = c;
 }
 
-void Terminal::putEntryAt(char c, u8 color, u16 x, u16 y) {
+void Terminal::putEntryAt(u8 c, VGA::Color color, u16 x, u16 y) {
 	const u16 index = y * VGA::Width + x;
 	buffer[index]   = VGA::entry(c, color);
 }
 
-char Terminal::getEntryFrom(u16 x, u16 y) {
+void Terminal::putEntryAt(u16 entry, u16 x, u16 y) {
+	const u16 index = y * VGA::Width + x;
+	buffer[index]   = entry;
+}
+
+u16 Terminal::getEntryFrom(u16 x, u16 y) {
 	return buffer[(y * VGA::Width) + x];
 }
 
@@ -33,7 +44,7 @@ void Terminal::moveUpOneRow() {
 	while(j < VGA::Height) {
 		i = 0;
 		while(i < VGA::Width) {
-			putEntryAt(getEntryFrom(i, j), color, i, (j - 1));
+			putEntryAt(getEntryFrom(i, j), i, (j - 1));
 			i++;
 		}
 		j++;
@@ -78,4 +89,50 @@ void Terminal::write(const char *data, siz size) {
 
 void Terminal::write(const char *data) {
 	write(data, strlen(data));
+}
+
+void Terminal::write(u64 value) {
+	u64 maxshift = 1;
+	while(value / maxshift) {
+		maxshift *= 10;
+	}
+	maxshift /= 10;
+	while(maxshift > 0) {
+		u8 val = '0' + ((value / maxshift));
+		putchar(val);
+		value = value % maxshift;
+		maxshift /= 10;
+	}
+}
+
+void Terminal::prompt(VGA::Color foreground, const char *prompt,
+                      const char *message) {
+	write("[ ", 2);
+	VGA::Color oldColor = color;
+	setColor(foreground);
+	write(prompt);
+	setColor(oldColor);
+	write(" ] ", 3);
+	write(message);
+	write("\n", 1);
+}
+
+void Terminal::info(const char *data) {
+	prompt(VGA::Color::Cyan, "Info", data);
+}
+
+void Terminal::warn(const char *data) {
+	prompt(VGA::Color::Magenta, "Warn", data);
+}
+
+void Terminal::done(const char *data) {
+	prompt(VGA::Color::Green, "Done", data);
+}
+
+void Terminal::fail(const char *data) {
+	prompt(VGA::Color::Red, "Fail", data);
+}
+
+void Terminal::err(const char *data) {
+	prompt(VGA::Color::Red, "ERR ", data);
 }

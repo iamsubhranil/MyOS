@@ -22,11 +22,11 @@ struct VGA {
 		White        = 15,
 	};
 
-	static inline u8 color(Color fg, Color bg) {
-		return (int)fg | (int)bg << 4;
+	static inline Color color(Color fg, Color bg) {
+		return (Color)((u8)fg | (u8)bg << 4);
 	}
 
-	static inline u16 entry(char uc, u8 color) {
+	static inline u16 entry(char uc, Color color) {
 		return (u16)uc | (u16)color << 8;
 	}
 

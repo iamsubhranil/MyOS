@@ -1,5 +1,7 @@
 CXX=i686-elf-g++
 LD=i686-elf-ld
+CXXFLAGS=
+QEMUFLAGS=
 
 # $(wildcard *.cpp /xxx/xxx/*.cpp): get all .cpp files from the current directory and dir "/xxx/xxx/"
 SRCS := $(wildcard *.cpp)
@@ -10,10 +12,10 @@ boot: boot.s
 	i686-elf-as boot.s -o boot.o
 
 %.o: %.cpp
-	$(CXX) -c $< -o $@ -ffreestanding -O2 -Wall -Wextra
+	$(CXX) -c $< -o $@ -ffreestanding $(CXXFLAGS) -Wall -Wextra
 
 linker: linker.ld $(OBJS) 
-	$(CXX) -T linker.ld -o myos.bin -ffreestanding -O2 -nostdlib $(OBJS) boot.o -lgcc
+	$(CXX) -T linker.ld -o myos.bin -ffreestanding $(CXXFLAGS) -nostdlib $(OBJS) boot.o -lgcc
 
 iso: myos.bin
 	cp myos.bin isodir/boot/myos.bin
@@ -21,7 +23,7 @@ iso: myos.bin
 	grub-mkrescue -o myos.iso isodir
 
 start: myos.bin
-	qemu-system-x86_64 -kernel myos.bin
+	qemu-system-x86_64 -kernel myos.bin $(QEMUFLAGS)
 
 clean:
 	$(RM) -f $(OBJS) myos.bin
@@ -37,4 +39,10 @@ distclean: clean
 
 include .depend
 
-all: boot linker start
+all: release
+release: CXXFLAGS += -O2
+release: boot linker start
+
+debug: CXXFLAGS += -O0 -g3
+debug: QEMUFLAGS += -no-reboot -d int -monitor stdio -s
+debug: boot linker start

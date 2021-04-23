@@ -16,8 +16,9 @@ struct IDT {
 		Entry *base;
 	} __attribute__((packed));
 
-	static Entry entries[256];
+	static Entry       entries[256];
+	static const char *exceptionMessages[32];
 
-	static void setGate(u8 num, u64 base, u16 sel, u8 flags);
+	static void setGate(u8 num, uptr base, u16 sel, u8 flags);
 	static void init();
 };

@@ -1,8 +1,10 @@
 #include "gdt.h"
 #include "idt.h"
 #include "io.h"
+#include "irq.h"
 #include "keycodes.h"
 #include "terminal.h"
+#include "timer.h"
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
 #if defined(__linux__)
@@ -21,26 +23,16 @@ extern "C" { /* Use C linkage for kernel_main. */
 
 // entry-point
 void kernelMain() {
+	Terminal::init();
 	GDT::init();
 	IDT::init();
-
-	u8 c = IO::getScanCode();
-	/* Initialize terminal interface */
-	Terminal terminal;
-
-	/* Newline support is left as an exercise. */
-	terminal.write("\nEnter a key : \n");
-	c       = IO::getScanCode();
-	u8 oldc = 0x00;
+	IRQ::init();
+	// allow irqs to happen
+	// asm volatile("sti");
+	Timer::init();
 	while(1) {
-		if(oldc != c) {
-			terminal.write(Keycodes::getKey(c));
-			terminal.write("\n");
-		}
-		oldc = c;
-		c    = IO::getScanCode();
-		if(c == 0xE0)
-			c = IO::getScanCode();
+		Timer::wait(1000000000);
+		// Terminal::write("Done!");
 	}
 }
 

@@ -26,13 +26,16 @@ void GDT::setGate(u32 num, u64 base, u64 limit, u8 access, u8 gran) {
 }
 
 void GDT::init() {
+	Terminal::info("Setting up GDT..");
 	/* Setup the GDT pointer and limit */
 	__gdtptr.limit = (sizeof(GDT::Entry) * 3) - 1;
 	__gdtptr.base  = entries;
 
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting NULL gate..");
 	/* Our NULL descriptor */
 	setGate(0, 0, 0, 0, 0);
 
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting code segment..");
 	/* The second entry is our Code Segment. The base address
 	 *  is 0, the limit is 4GBytes, it uses 4KByte granularity,
 	 *  uses 32-bit opcodes, and is a Code Segment descriptor.
@@ -40,11 +43,15 @@ void GDT::init() {
 	 *  to see exactly what each value means */
 	setGate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF);
 
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting data segment..");
 	/* The third entry is our Data Segment. It's EXACTLY the
 	 *  same as our code segment, but the descriptor type in
 	 *  this entry's access byte says it's a Data Segment */
 	setGate(2, 0, 0xFFFFFFFF, 0x92, 0xCF);
 
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Installing changes..");
 	/* Flush out the old GDT and install the new changes! */
 	gdtFlush();
+
+	Terminal::done("GDT is set up successfully!");
 }
