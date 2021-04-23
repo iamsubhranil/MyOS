@@ -3,8 +3,8 @@
 #include "system.h"
 
 struct Timer {
-	static u32 ticks;
-	static u32 frequency;
+	static volatile u32 ticks;
+	static u32          frequency;
 
 	static void wait(u32 ticks);
 	static void setFrequency(u16 hz);

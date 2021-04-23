@@ -3,8 +3,8 @@
 #include "irq.h"
 #include "terminal.h"
 
-u32 Timer::ticks     = 0;
-u32 Timer::frequency = 18;
+volatile u32 Timer::ticks     = 0;
+u32          Timer::frequency = 18;
 
 void Timer::setFrequency(u16 hz) {
 	Terminal::write("Setting freq ");
@@ -34,9 +34,9 @@ void Timer::handler(Register *r) {
 
 	/* Every 'frequency' clocks (approximately 1 second), we will
 	 *  display a message on the screen */
-	if(ticks % frequency == 0) {
-		Terminal::prompt(VGA::Color::Blue, "Timer", "One second is done..");
-	}
+	// if(ticks % frequency == 0) {
+	//	Terminal::prompt(VGA::Color::Blue, "Timer", "One second is done..");
+	// }
 }
 
 void Timer::wait(u32 t) {

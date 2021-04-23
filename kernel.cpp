@@ -33,8 +33,8 @@ void kernelMain() {
 	asm("sti");
 	Timer::init();
 	while(1) {
-		Timer::wait(10000);
-		// Terminal::prompt(VGA::Color::Blue, "Kernel", "Waited for 10 ticks!");
+		Timer::wait(Timer::frequency);
+		Terminal::prompt(VGA::Color::Blue, "Kernel", "Waited for 1 seconds!");
 	}
 }
 
