@@ -7,10 +7,18 @@ u32 Timer::ticks     = 0;
 u32 Timer::frequency = 18;
 
 void Timer::setFrequency(u16 hz) {
-	u16 divisor = 1193180 / hz;     /* Calculate our divisor */
-	IO::outb(0x43, 0x36);           /* Set our command byte 0x36 */
+	Terminal::write("Setting freq ");
+	Terminal::write(hz);
+	Terminal::write("..\n");
+	u16 divisor = 1193180 / hz; /* Calculate our divisor */
+	Terminal::write("Sending command byte..\n");
+	IO::outb(0x43, 0x36); /* Set our command byte 0x36 */
+	Terminal::write("Sending low byte..\n");
 	IO::outb(0x40, divisor & 0xFF); /* Set low byte of divisor */
-	IO::outb(0x40, divisor >> 8);   /* Set high byte of divisor */
+	Terminal::write("Sending high byte..\n");
+	IO::outb(0x40, divisor >> 8); /* Set high byte of divisor */
+	Terminal::write("Freq set complete..\n");
+	frequency = hz;
 }
 
 /*  Handles the timer. In this case, it's very simple: We
@@ -22,7 +30,7 @@ void Timer::handler(Register *r) {
 	(void)r;
 	/* Increment our 'tick count' */
 	ticks++;
-	Terminal::write("Tick..\n");
+	// Terminal::prompt(VGA::Color::Blue, "Timer", "Tick..");
 
 	/* Every 'frequency' clocks (approximately 1 second), we will
 	 *  display a message on the screen */
@@ -32,9 +40,6 @@ void Timer::handler(Register *r) {
 }
 
 void Timer::wait(u32 t) {
-	// Terminal::write("Ticks: ");
-	// Terminal::write(t);
-	// Terminal::write("\n");
 	u32 end = ticks + t;
 	while(ticks < end) {
 	};
@@ -44,12 +49,9 @@ void Timer::wait(u32 t) {
  *  into IRQ0 */
 void Timer::init() {
 	Terminal::info("Setting up PIT..");
-	Terminal::write("Ticks: ");
-	Terminal::write(ticks);
-	Terminal::write("\n");
-	Timer::setFrequency(20);
 	/* Installs 'timer_handler' to IRQ0 */
 	Terminal::prompt(VGA::Color::Brown, "PIT", "Installing handler..");
 	IRQ::installHandler(0, Timer::handler);
+	Timer::setFrequency(10000);
 	Terminal::done("PIT setup complete..");
 }

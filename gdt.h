@@ -19,8 +19,8 @@ struct GDT {
 	/* Special pointer which includes the limit: The max bytes
 	 *  taken up by the GDT, minus 1. Again, this NEEDS to be packed */
 	struct Pointer {
-		u16    limit;
-		Entry *base;
+		u16  limit;
+		uptr base;
 	} __attribute__((packed));
 
 	static Entry entries[3];

@@ -92,6 +92,10 @@ void Terminal::write(const char *data) {
 }
 
 void Terminal::write(u64 value) {
+	if(value == 0) {
+		putchar('0');
+		return;
+	}
 	u64 maxshift = 1;
 	while(value / maxshift) {
 		maxshift *= 10;

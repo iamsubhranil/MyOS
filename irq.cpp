@@ -94,7 +94,6 @@ extern "C" {
  *  an EOI command to the first controller. If you don't send
  *  an EOI, you won't raise any more IRQs */
 void _irq_handler(Register *r) {
-	Terminal::info("IRQ");
 	/* Find out if we have a custom handler to run for this
 	 *  IRQ, and then finally, run it */
 	auto handler = IRQ::routines[r->int_no - 32];

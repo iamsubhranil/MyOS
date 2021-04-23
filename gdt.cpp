@@ -28,8 +28,8 @@ void GDT::setGate(u32 num, u64 base, u64 limit, u8 access, u8 gran) {
 void GDT::init() {
 	Terminal::info("Setting up GDT..");
 	/* Setup the GDT pointer and limit */
-	__gdtptr.limit = (sizeof(GDT::Entry) * 3) - 1;
-	__gdtptr.base  = entries;
+	__gdtptr.limit = sizeof(GDT::entries) - 1;
+	__gdtptr.base  = (uptr)entries;
 
 	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting NULL gate..");
 	/* Our NULL descriptor */

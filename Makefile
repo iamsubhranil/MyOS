@@ -44,5 +44,5 @@ release: CXXFLAGS += -O2
 release: boot linker start
 
 debug: CXXFLAGS += -O0 -g3
-debug: QEMUFLAGS += -no-reboot -d int -monitor stdio -s
+debug: QEMUFLAGS += -no-reboot -d int -monitor stdio
 debug: boot linker start

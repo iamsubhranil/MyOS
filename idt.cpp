@@ -1,7 +1,6 @@
 #include "idt.h"
 #include "terminal.h"
 
-IDT::Pointer __idtptr = {0, NULL};
 extern "C" {
 
 // isr stubs written in boot.s
@@ -39,7 +38,8 @@ extern void _isr30();
 extern void _isr31();
 }
 
-IDT::Entry IDT::entries[256] = {{0, 0, 0, 0, 0}};
+IDT::Entry   IDT::entries[256] = {{0, 0, 0, 0, 0}};
+IDT::Pointer IDT::__idtptr     = {0, 0};
 
 /* Use this function to set an entry in the IDT. Alot simpler
  *  than twiddling with the GDT ;) */
@@ -62,10 +62,8 @@ void IDT::init() {
 	Terminal::prompt(VGA::Color::Brown, "IDT",
 	                 "Initializing interrupt table vector..");
 	/* Sets the special IDT pointer up, just like in 'gdt.c' */
-	//__idtptr.limit = (sizeof(IDT::Entry) * 256) - 1;
-	__idtptr.limit = 2047;
-	//__idtptr.base  = NULL;
-	__idtptr.base = entries;
+	__idtptr.limit = sizeof(IDT::entries) - 1;
+	__idtptr.base  = (uptr)entries;
 
 	/* IDT is already cleared out to all 0's */
 

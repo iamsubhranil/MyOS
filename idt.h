@@ -12,11 +12,12 @@ struct IDT {
 	} __attribute__((packed));
 
 	struct Pointer {
-		u16    limit;
-		Entry *base;
+		u16  limit;
+		uptr base;
 	} __attribute__((packed));
 
 	static Entry       entries[256];
+	static Pointer     __idtptr;
 	static const char *exceptionMessages[32];
 
 	static void setGate(u8 num, uptr base, u16 sel, u8 flags);

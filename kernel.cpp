@@ -24,15 +24,17 @@ extern "C" { /* Use C linkage for kernel_main. */
 // entry-point
 void kernelMain() {
 	Terminal::init();
+	// disable interrupts before setting up gdt, idt and irqs
+	asm("cli");
 	GDT::init();
 	IDT::init();
 	IRQ::init();
-	// allow irqs to happen
-	// asm volatile("sti");
+	// we are all done, now enable interrupts
+	asm("sti");
 	Timer::init();
 	while(1) {
-		Timer::wait(1000000000);
-		// Terminal::write("Done!");
+		Timer::wait(10000);
+		// Terminal::prompt(VGA::Color::Blue, "Kernel", "Waited for 10 ticks!");
 	}
 }
 
