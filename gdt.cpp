@@ -1,4 +1,5 @@
 #include "gdt.h"
+#include "descriptor.h"
 #include "myos.h"
 #include "terminal.h"
 
@@ -41,13 +42,29 @@ void GDT::init() {
 	 *  uses 32-bit opcodes, and is a Code Segment descriptor.
 	 *  Please check the table above in the tutorial in order
 	 *  to see exactly what each value means */
-	setGate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF);
+	setGate(1, 0, 0xFFFFFFFF,
+
+	        Descriptor::accessByte(
+	            Descriptor::PriviledgeLevel::Ring0,
+	            Descriptor::Type::CodeOrData, Descriptor::Executable::Yes,
+	            Descriptor::Direction::Up, Descriptor::ReadWrite::Allowed),
+
+	        Descriptor::flagByte(Descriptor::Granularity::KiloByte,
+	                             Descriptor::OperandSize::Bits32));
 
 	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting data segment..");
 	/* The third entry is our Data Segment. It's EXACTLY the
 	 *  same as our code segment, but the descriptor type in
 	 *  this entry's access byte says it's a Data Segment */
-	setGate(2, 0, 0xFFFFFFFF, 0x92, 0xCF);
+	setGate(2, 0, 0xFFFFFFFF,
+
+	        Descriptor::accessByte(
+	            Descriptor::PriviledgeLevel::Ring0,
+	            Descriptor::Type::CodeOrData, Descriptor::Executable::No,
+	            Descriptor::Direction::Up, Descriptor::ReadWrite::Allowed),
+
+	        Descriptor::flagByte(Descriptor::Granularity::KiloByte,
+	                             Descriptor::OperandSize::Bits32));
 
 	Terminal::prompt(VGA::Color::Brown, "GDT", "Installing changes..");
 	/* Flush out the old GDT and install the new changes! */
