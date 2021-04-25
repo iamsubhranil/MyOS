@@ -175,6 +175,7 @@ u32 Terminal::write(u64 value) {
 			break;
 		default: return 0;
 	}
+	return ret;
 }
 
 u32 Terminal::write(i64 value) {
