@@ -2,8 +2,5 @@
 
 #include "myos.h"
 
-siz strlen(const char *str) {
-	siz len = 0;
-	while(str[len]) len++;
-	return len;
-}
+siz  strlen(const char *str);
+void memset(void *mem, u8 value, u32 size);
