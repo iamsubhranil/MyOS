@@ -20,6 +20,7 @@ struct VGA {
 		LightMagenta = 13,
 		LightBrown   = 14,
 		White        = 15,
+		Reset        = 16, // not a valid color, a control value for terminal
 	};
 
 	static inline Color color(Color fg, Color bg) {

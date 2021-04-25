@@ -6,7 +6,11 @@ u16        Terminal::row    = 0;
 u16        Terminal::column = 0;
 VGA::Color Terminal::color =
     VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
-u16 *Terminal::buffer = 0;
+VGA::Color Terminal::previousColor =
+    VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
+Terminal::Mode Terminal::currentMode  = Terminal::Mode::Dec;
+Terminal::Mode Terminal::previousMode = Terminal::Mode::Dec;
+u16 *          Terminal::buffer       = 0;
 
 void Terminal::init() {
 	row    = 0;
@@ -22,7 +26,13 @@ void Terminal::init() {
 }
 
 void Terminal::setColor(VGA::Color c) {
-	color = c;
+	previousColor = color;
+	color         = c;
+}
+
+void Terminal::setMode(Terminal::Mode c) {
+	previousMode = currentMode;
+	currentMode  = c;
 }
 
 void Terminal::putEntryAt(u8 c, VGA::Color color, u16 x, u16 y) {
@@ -58,7 +68,7 @@ void Terminal::moveUpOneRow() {
 	column = 0;
 }
 
-void Terminal::putchar(char c) {
+u32 Terminal::write(char c) {
 	if(c == '\n') {
 		column = VGA::Width - 1;
 	} else if(c == '\r') {
@@ -81,62 +91,147 @@ void Terminal::putchar(char c) {
 			}
 		}
 	}
+	return 1;
 }
 
-void Terminal::write(const char *data, siz size) {
-	for(u16 i = 0; i < size; i++) putchar(data[i]);
+u32 Terminal::writebytes(const char *data, siz size) {
+	for(u16 i = 0; i < size; i++) write(data[i]);
+	return size;
 }
 
-void Terminal::write(const char *data) {
-	write(data, strlen(data));
+u32 Terminal::write(const char *data) {
+	return writebytes(data, strlen(data));
 }
 
-void Terminal::write(u64 value) {
+u32 Terminal::write_dec(u64 value) {
 	if(value == 0) {
-		putchar('0');
-		return;
+		write('0');
+		return 1;
 	}
-	u64 maxshift = 1;
-	while(value / maxshift) {
-		maxshift *= 10;
+	char str[20] = {'0'};
+	u8   start   = 20;
+	while(value > 0) {
+		--start;
+		u8 dig     = value % 10;
+		str[start] = '0' + dig;
+		value /= 10;
 	}
-	maxshift /= 10;
-	while(maxshift > 0) {
-		u8 val = '0' + ((value / maxshift));
-		putchar(val);
-		value = value % maxshift;
-		maxshift /= 10;
+	return writebytes(&str[start], 20 - start);
+}
+
+u32 Terminal::write_hex(u64 value) {
+	Terminal::write("0x");
+	if(value == 0) {
+		Terminal::write('0');
+		return 3;
+	}
+	char str[16] = {'0'};
+	u8   start   = 16;
+	while(value > 0) {
+		--start;
+		u8 last = value & 0xf;
+		if(last < 10)
+			str[start] = '0' + last;
+		else
+			str[start] = 'A' + (last - 10);
+		value >>= 4;
+	}
+	return writebytes(&str[start], 16 - start) + 2;
+}
+
+u32 Terminal::write_bin(u64 value) {
+	Terminal::write("0b");
+	if(value == 0) {
+		Terminal::write('0');
+		return 3;
+	}
+	char str[64] = {'0'};
+	u8   start   = 64;
+	while(value > 0) {
+		--start;
+		str[start] = '0' + (value & 1);
+		value >>= 1;
+	}
+	return writebytes(&str[start], 64 - start) + 2;
+}
+
+u32 Terminal::write(u64 value) {
+	switch(currentMode) {
+		case Terminal::Mode::Dec: return write_dec(value); break;
+		case Terminal::Mode::Hex: return write_hex(value); break;
+		case Terminal::Mode::Bin: return write_bin(value); break;
+		default: return 0;
 	}
 }
 
-void Terminal::prompt(VGA::Color foreground, const char *prompt,
-                      const char *message) {
-	write("[ ", 2);
-	VGA::Color oldColor = color;
-	setColor(foreground);
-	write(prompt);
-	setColor(oldColor);
-	write(" ] ", 3);
-	write(message);
-	write("\n", 1);
+u32 Terminal::write(i64 value) {
+	u8 add = 0;
+	if(value < 0) {
+		Terminal::write('-');
+		value = -value;
+		add   = 1;
+	}
+	return write((u64)value) + add;
 }
 
-void Terminal::info(const char *data) {
-	prompt(VGA::Color::Cyan, "Info", data);
+u32 Terminal::write(VGA::Color c) {
+	switch(c) {
+		case VGA::Color::Reset: {
+			setColor(previousColor);
+		} break;
+		default: {
+			setColor(c);
+		} break;
+	}
+	return 0;
 }
 
-void Terminal::warn(const char *data) {
-	prompt(VGA::Color::Magenta, "Warn", data);
+u32 Terminal::write(Terminal::Mode m) {
+	switch(m) {
+		case Terminal::Mode::Reset: {
+			setMode(previousMode);
+		} break;
+		default: {
+			setMode(m);
+		} break;
+	}
+	return 0;
 }
 
-void Terminal::done(const char *data) {
-	prompt(VGA::Color::Green, "Done", data);
+u32 Terminal::write(Terminal::Move m) {
+	switch(m) {
+		case Terminal::Move::Up: {
+			if(row == 0) {
+				row = VGA::Height - 1;
+			} else {
+				row--;
+			}
+		} break;
+		case Terminal::Move::Down: {
+			row = (row + 1) % VGA::Height;
+		} break;
+		case Terminal::Move::Left: {
+			if(column == 0) {
+				column = VGA::Width - 1;
+			} else {
+				column--;
+			}
+		} break;
+		case Terminal::Move::Right: {
+			column = (column + 1) % VGA::Width;
+		} break;
+	}
+	return 0;
 }
 
-void Terminal::fail(const char *data) {
-	prompt(VGA::Color::Red, "Fail", data);
-}
-
-void Terminal::err(const char *data) {
-	prompt(VGA::Color::Red, "ERR ", data);
+u32 Terminal::write(Terminal::Control c) {
+	switch(c) {
+		case Terminal::Control::ClearLine: {
+			for(u32 i = 0; i < VGA::Width; i++) {
+				putEntryAt(' ', row, i);
+				column = 0;
+			}
+		} break;
+	}
+	return 0;
 }
