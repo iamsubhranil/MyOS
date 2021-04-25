@@ -66,9 +66,19 @@ const char *ISR::interruptMessages[32] = {
     "Reserved",
 };
 
+ISR::Routine ISR::routines[32] = {NULL};
+
+void ISR::installHandler(u8 isr, ISR::Routine r) {
+	routines[isr] = r;
+}
+
+void ISR::uninstallHandler(u8 isr) {
+	routines[isr] = NULL;
+}
+
 extern "C" {
 void _fault_handler(Register *registers) {
-	Terminal::info("FAULT");
+	Terminal::info("INTERRUPT");
 	/* Is this a fault whose number is from 0 to 31? */
 	if(registers->int_no < 32) {
 		/* Display the description for the Exception that occurred.
@@ -76,8 +86,14 @@ void _fault_handler(Register *registers) {
 		 *  infinite loop */
 		Terminal::prompt(VGA::Color::Magenta, "INTRHW",
 		                 ISR::interruptMessages[registers->int_no]);
-		for(;;)
-			;
+		if(ISR::routines[registers->int_no]) {
+			ISR::routines[registers->int_no](registers);
+		} else {
+			Terminal::prompt(VGA::Color::Magenta, "INTRHW",
+			                 "No interrupt handler found! Looping!");
+			for(;;)
+				;
+		}
 	}
 }
 };
