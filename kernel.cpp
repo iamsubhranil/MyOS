@@ -3,6 +3,7 @@
 #include "io.h"
 #include "irq.h"
 #include "keycodes.h"
+#include "paging.h"
 #include "terminal.h"
 #include "timer.h"
 
@@ -31,9 +32,14 @@ void kernelMain() {
 	IRQ::init();
 	// we are all done, now enable interrupts
 	asm("sti");
+	Paging::init();
 	Timer::init();
 	while(1) {
-		Timer::wait(Timer::frequency);
+		Terminal::prompt(VGA::Color::Blue, "Kernel",
+		                 "Trying to page fault at 0xA0000000..");
+		u8 *x             = (u8 *)(0xA0000000);
+		u8  do_page_fault = *x;
+		Timer::wait(do_page_fault);
 		Terminal::prompt(VGA::Color::Blue, "Kernel", "Waited for 1 seconds!");
 	}
 }
