@@ -9,6 +9,10 @@ struct Terminal {
 		Dec,
 		Hex,
 		Bin,
+		// automatically resets the mode after printing one number
+		DecOnce,
+		HexOnce,
+		BinOnce,
 		Reset // sets back whatever the previous mode was
 	};
 	enum class Move {

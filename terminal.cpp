@@ -156,10 +156,23 @@ u32 Terminal::write_bin(u64 value) {
 }
 
 u32 Terminal::write(u64 value) {
+	u32 ret;
 	switch(currentMode) {
-		case Terminal::Mode::Dec: return write_dec(value); break;
-		case Terminal::Mode::Hex: return write_hex(value); break;
-		case Terminal::Mode::Bin: return write_bin(value); break;
+		case Terminal::Mode::Dec: ret = write_dec(value); break;
+		case Terminal::Mode::DecOnce:
+			ret = write_dec(value);
+			setMode(previousMode);
+			break;
+		case Terminal::Mode::Hex: ret = write_hex(value); break;
+		case Terminal::Mode::HexOnce:
+			ret = write_hex(value);
+			setMode(previousMode);
+			break;
+		case Terminal::Mode::Bin: ret = write_bin(value); break;
+		case Terminal::Mode::BinOnce:
+			ret = write_bin(value);
+			setMode(previousMode);
+			break;
 		default: return 0;
 	}
 }
