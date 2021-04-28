@@ -4,34 +4,48 @@
 #include "system.h"
 
 struct Paging {
-	static const u32 PageSize           = 0x1000; // 4KiB
-	static const u32 PagesPerTable      = 1024;
-	static const u32 TablesPerDirectory = 1024;
+	static const siz PageSize           = 0x1000; // 4KiB
+	static const siz PagesPerTable      = 1024;
+	static const siz TablesPerDirectory = 1024;
 
 	static constexpr bool isAligned(uptr addr) {
-		return (addr & ~(PageSize - 1)) == 0;
+		return (addr & (PageSize - 1)) == 0;
+	}
+
+	static constexpr void alignAddress(uptr &addr) {
+		addr &= ~(PageSize - 1);
+		addr += PageSize;
+	}
+
+	static constexpr void alignIfNeeded(uptr &addr) {
+		if(!isAligned(addr))
+			alignAddress(addr);
 	}
 
 	struct Frame {
 		static u32 *frames; // bitset of active frames
-		static u32  numberOfFrames;
+		static siz  numberOfFrames;
+		static siz  numberOfSets; // number of values in 'frames' array
 
-		static constexpr u32 index(u32 frame) {
+		static constexpr siz index(uptr frame) {
 			return (frame >>
 			        5); // each bit value holds 32 bits, so we get the index
 		}
-		static constexpr u32 offset(u32 frame) {
+		static constexpr siz offset(uptr frame) {
 			return (frame &
 			        31); // each bit value holds 32 bits, so we get the offset
 		}
 
 		static void init();
 
-		static void set(u32 addr);
-		static void clear(u32 addr);
-		static bool test(u32 addr);
+		static void set(uptr addr);
+		static void clear(uptr addr);
+		static bool test(uptr addr);
 
-		static u32 findFirstFreeFrame();
+		static uptr findFirstFreeFrame(uptr lastFrame = 0);
+		// searches in the given range (inclusive in to_index, exclusive in
+		// to_offset)
+		static bool searchInRange(uptr from_index, uptr to_index, uptr &result);
 	};
 
 	// 'unused' crosses byte boundary, but we disable the warning in Makefile
@@ -44,7 +58,11 @@ struct Paging {
 		u8  unused : 7;   // Amalgamation of unused and reserved bits
 		u32 frame : 20;   // Frame address (shifted right 12 bits)
 
-		void alloc(bool isKernel, bool isWritable);
+		// optionally takes the last allocated frame index to pass
+		// to findFirstFreeFrame, so that it does not start searching
+		// from the beginning.
+		// returns the allocated frame
+		uptr alloc(bool isKernel, bool isWritable, uptr lastFrame = 0);
 		void free();
 
 		u32 dump() const;
@@ -60,20 +78,21 @@ struct Paging {
 		    Array of pointers to the pagetables above, but gives their
 		   *physical* location, for loading into the CR3 register.
 		*/
-		u32 tablesPhysical[TablesPerDirectory];
+		uptr tablesPhysical[TablesPerDirectory];
 		/*
 		    The physical address of tablesPhysical. This comes into play
 		    when we get our kernel heap allocated and the directory
 		    may be in a different location in virtual memory.
 		*/
-		u32 physicalAddr;
-	};
+		siz physicalAddr;
 
-	static Directory *currentDirectory;
+		static Directory *currentDirectory;
+		static Directory *kernelDirectory;
+	};
 
 	static void  init();
 	static void  switchPageDirectory(Directory *newDirectory);
-	static Page *getPage(u32 address, bool createIfAbsent, Directory *dir);
+	static Page *getPage(uptr address, bool createIfAbsent, Directory *dir);
 
 	static void handlePageFault(Register *r);
 };

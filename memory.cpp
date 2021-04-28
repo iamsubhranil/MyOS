@@ -1,30 +1,54 @@
-#include "kernel.h"
+#include "memory.h"
+#include "heap.h"
 #include "paging.h"
 
 extern u32 end; // defined in linker script
-u32        Kernel::Memory::placementAddress = (u32)&end;
+uptr       Memory::placementAddress = (uptr)&end;
+Heap *     Memory::kernelHeap       = NULL;
 
-void *Kernel::Memory::alloc(u32 size) {
-	return (void *)((placementAddress += size) - size);
-}
-void *Kernel::Memory::alloc(u32 size, u32 *phys) {
-	*phys = placementAddress;
-	return alloc(size);
-}
-
-void *Kernel::Memory::alloc_a(u32 size) {
-	if(!Paging::isAligned(placementAddress)) {
-		placementAddress &= ~(Paging::PageSize - 1);
-		placementAddress += Paging::PageSize;
+void *Memory::alloc(siz size) {
+	if(kernelHeap) {
+		return kernelHeap->alloc(size, false);
 	}
+	return (void *)((uptr)(placementAddress += size) - size);
+}
+void *Memory::alloc(siz size, uptr &phys) {
+	if(kernelHeap) {
+		void *        addr = kernelHeap->alloc(size, false);
+		Paging::Page *page = Paging::getPage(
+		    (uptr)addr, false, Paging::Directory::kernelDirectory);
+		phys = page->frame * Paging::PageSize +
+		       ((uptr)addr & (Paging::PageSize - 1));
+		return addr;
+	}
+	phys = placementAddress;
 	return alloc(size);
 }
 
-void *Kernel::Memory::alloc_a(u32 size, u32 *phys) {
-	if(!Paging::isAligned(placementAddress)) {
-		placementAddress &= ~(Paging::PageSize - 1);
-		placementAddress += Paging::PageSize;
+void *Memory::alloc_a(siz size) {
+	if(kernelHeap) {
+		return kernelHeap->alloc(size, true);
 	}
-	*phys = placementAddress;
+	Paging::alignIfNeeded(placementAddress);
 	return alloc(size);
+}
+
+void *Memory::alloc_a(siz size, uptr &phys) {
+	if(kernelHeap) {
+		void *        addr = kernelHeap->alloc(size, true);
+		Paging::Page *page = Paging::getPage(
+		    (uptr)addr, false, Paging::Directory::kernelDirectory);
+		phys = page->frame * Paging::PageSize +
+		       ((uptr)addr & (Paging::PageSize - 1));
+		return addr;
+	}
+	Paging::alignIfNeeded(placementAddress);
+	phys = placementAddress;
+	return alloc(size);
+}
+
+void Memory::free(void *addr) {
+	if(kernelHeap) {
+		kernelHeap->free(addr);
+	}
 }

@@ -3,6 +3,7 @@
 #include "io.h"
 #include "irq.h"
 #include "keycodes.h"
+#include "memory.h"
 #include "paging.h"
 #include "terminal.h"
 #include "timer.h"
@@ -35,6 +36,21 @@ void kernelMain() {
 	Paging::init();
 	Timer::init();
 	while(1) {
+		Terminal::prompt(VGA::Color::Blue, "Kernel", "Allocating an u32..");
+		u32 *a = (u32 *)Memory::alloc(sizeof(u32));
+		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
+		                 Terminal::Mode::HexOnce, (void *)a, "..");
+		Terminal::prompt(VGA::Color::Blue, "Kernel", "Allocating an u32..");
+		u32 *b = (u32 *)Memory::alloc(sizeof(u32));
+		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
+		                 Terminal::Mode::HexOnce, (void *)b, "..");
+		Terminal::prompt(VGA::Color::Blue, "Kernel", "Releasing the u32s..");
+		Memory::free(a);
+		Memory::free(b);
+		Terminal::prompt(VGA::Color::Blue, "Kernel", "Allocating an u32..");
+		u32 *c = (u32 *)Memory::alloc(sizeof(u32));
+		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
+		                 Terminal::Mode::HexOnce, (void *)c, "..");
 		Terminal::prompt(VGA::Color::Blue, "Kernel",
 		                 "Trying to page fault at 0xA0000000..");
 		u8 *x             = (u8 *)(0xA0000000);
