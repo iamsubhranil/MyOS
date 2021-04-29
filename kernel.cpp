@@ -1,3 +1,4 @@
+#include "asm.h"
 #include "gdt.h"
 #include "idt.h"
 #include "io.h"
@@ -27,12 +28,12 @@ extern "C" { /* Use C linkage for kernel_main. */
 void kernelMain() {
 	Terminal::init();
 	// disable interrupts before setting up gdt, idt and irqs
-	asm("cli");
+	Asm::cli();
 	GDT::init();
 	IDT::init();
 	IRQ::init();
 	// we are all done, now enable interrupts
-	asm("sti");
+	Asm::sti();
 	Paging::init();
 	Timer::init();
 	while(1) {

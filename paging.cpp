@@ -1,4 +1,5 @@
 #include "paging.h"
+#include "asm.h"
 #include "heap.h"
 #include "isr.h"
 #include "memory.h"
@@ -36,9 +37,7 @@ bool Paging::Frame::searchInRange(uptr fri, uptr toi, uptr &result) {
 		if(frames[i] == 0)
 			return true;
 		u32 search = ~frames[i]; // we are assuming siz is 32 bit
-		u32 offset = 0;
-		asm("bsf %0, %0" : "=r"(offset) : "r"(search));
-		result += offset;
+		result += Asm::bsf(search);
 		return true;
 	}
 	return false;

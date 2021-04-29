@@ -1,4 +1,5 @@
 #include "idt.h"
+#include "asm.h"
 #include "terminal.h"
 
 extern "C" {
@@ -109,6 +110,6 @@ void IDT::init() {
 
 	Terminal::prompt(VGA::Color::Brown, "IDT", "Installing changes..");
 	/* Points the processor's internal register to the new IDT */
-	asm __volatile__("lidt %0" : : "m"(__idtptr));
+	Asm::lidt(__idtptr);
 	Terminal::done("IDT is set up successfully!");
 }
