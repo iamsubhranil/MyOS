@@ -1,6 +1,7 @@
 #pragma once
 
 #include "myos.h"
+#include "task.h"
 
 struct GDT {
 
@@ -23,7 +24,7 @@ struct GDT {
 		uptr base;
 	} __attribute__((packed));
 
-	static Entry entries[3];
+	static Entry entries[6];
 
 	static void setGate(u32 num, u64 base, u64 limit, u8 access, u8 gran);
 

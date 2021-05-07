@@ -5,7 +5,10 @@
 #include "irq.h"
 #include "keycodes.h"
 #include "memory.h"
+#include "multiboot.h"
 #include "paging.h"
+#include "syscall.h"
+#include "task.h"
 #include "terminal.h"
 #include "timer.h"
 
@@ -20,13 +23,21 @@
 #error "This tutorial needs to be compiled with a ix86-elf compiler"
 #endif
 
+// syscall
+extern int hello() {
+	Terminal::write("syscall is working!\n");
+	return 0;
+}
 #if defined(__cplusplus)
 extern "C" { /* Use C linkage for kernel_main. */
 #endif
 
 // entry-point
-void kernelMain() {
+void kernelMain(Multiboot *mboot, u32 mbootMagic, uptr esp) {
+	(void)mbootMagic;
+	(void)esp;
 	Terminal::init();
+	mboot->dump();
 	// disable interrupts before setting up gdt, idt and irqs
 	Asm::cli();
 	GDT::init();
@@ -36,6 +47,8 @@ void kernelMain() {
 	Asm::sti();
 	Paging::init();
 	Timer::init();
+	Syscall::init();
+	// Task::switchToUserMode(esp);
 	while(1) {
 		Terminal::prompt(VGA::Color::Blue, "Kernel", "Allocating an u32..");
 		u32 *a = (u32 *)Memory::alloc(sizeof(u32));

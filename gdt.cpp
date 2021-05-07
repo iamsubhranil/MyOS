@@ -1,14 +1,16 @@
 #include "gdt.h"
 #include "descriptor.h"
 #include "myos.h"
+#include "task.h"
 #include "terminal.h"
 
 extern "C" {
 GDT::Pointer __gdtptr;
 extern void  gdtFlush();
+extern void  tssFlush();
 };
 
-GDT::Entry GDT::entries[3] = {{0, 0, 0, 0, 0, 0}};
+GDT::Entry GDT::entries[6] = {{0, 0, 0, 0, 0, 0}};
 
 /* Setup a descriptor in the Global Descriptor Table */
 void GDT::setGate(u32 num, u64 base, u64 limit, u8 access, u8 gran) {
@@ -36,7 +38,7 @@ void GDT::init() {
 	/* Our NULL descriptor */
 	setGate(0, 0, 0, 0, 0);
 
-	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting code segment..");
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting kernel code segment..");
 	/* The second entry is our Code Segment. The base address
 	 *  is 0, the limit is 4GBytes, it uses 4KByte granularity,
 	 *  uses 32-bit opcodes, and is a Code Segment descriptor.
@@ -52,7 +54,7 @@ void GDT::init() {
 	        Descriptor::flagByte(Descriptor::Granularity::KiloByte,
 	                             Descriptor::OperandSize::Bits32));
 
-	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting data segment..");
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting kernel data segment..");
 	/* The third entry is our Data Segment. It's EXACTLY the
 	 *  same as our code segment, but the descriptor type in
 	 *  this entry's access byte says it's a Data Segment */
@@ -66,9 +68,37 @@ void GDT::init() {
 	        Descriptor::flagByte(Descriptor::Granularity::KiloByte,
 	                             Descriptor::OperandSize::Bits32));
 
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting user code segment..");
+	setGate(3, 0, 0xFFFFFFFF,
+	        Descriptor::accessByte(
+	            Descriptor::PriviledgeLevel::Ring3,
+	            Descriptor::Type::CodeOrData, Descriptor::Executable::Yes,
+	            Descriptor::Direction::Up, Descriptor::ReadWrite::Allowed),
+
+	        Descriptor::flagByte(Descriptor::Granularity::KiloByte,
+	                             Descriptor::OperandSize::Bits32));
+
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting user data segment..");
+	setGate(4, 0, 0xFFFFFFFF,
+	        Descriptor::accessByte(
+	            Descriptor::PriviledgeLevel::Ring3,
+	            Descriptor::Type::CodeOrData, Descriptor::Executable::No,
+	            Descriptor::Direction::Up, Descriptor::ReadWrite::Allowed),
+
+	        Descriptor::flagByte(Descriptor::Granularity::KiloByte,
+	                             Descriptor::OperandSize::Bits32));
+
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Setting task state segment..");
+	Task::taskStateSegment.init(0x01, 0x0);
+	setGate(5, (uptr)&Task::taskStateSegment,
+	        (uptr)&Task::taskStateSegment + sizeof(Task::StateSegment), 0xE9,
+	        0x0);
+
 	Terminal::prompt(VGA::Color::Brown, "GDT", "Installing changes..");
 	/* Flush out the old GDT and install the new changes! */
 	gdtFlush();
+	Terminal::prompt(VGA::Color::Brown, "GDT", "Installing TSS..");
+	tssFlush();
 
 	Terminal::done("GDT is set up successfully!");
 }

@@ -31,7 +31,7 @@ This keeps a uniform stack frame. To track which exception is firing,
 we also push the interrupt number on the stack.
 
 */
-const char *ISR::interruptMessages[32] = {
+const char *ISR::interruptMessages[255] = {
     "Division By Zero Exception",
     "Debug Exception",
     "Non Maskable Interrupt Exception",
@@ -66,7 +66,7 @@ const char *ISR::interruptMessages[32] = {
     "Reserved",
 };
 
-ISR::Routine ISR::routines[32] = {NULL};
+ISR::Routine ISR::routines[255] = {NULL};
 
 void ISR::installHandler(u8 isr, ISR::Routine r) {
 	routines[isr] = r;
@@ -80,12 +80,17 @@ extern "C" {
 void _fault_handler(Register *registers) {
 	Terminal::info("INTERRUPT");
 	/* Is this a fault whose number is from 0 to 31? */
-	if(registers->int_no < 32) {
+	if(registers->int_no < 256) {
 		/* Display the description for the Exception that occurred.
 		 *  In this tutorial, we will simply halt the system using an
 		 *  infinite loop */
-		Terminal::prompt(VGA::Color::Magenta, "INTRHW",
-		                 ISR::interruptMessages[registers->int_no]);
+		if(ISR::interruptMessages[registers->int_no]) {
+			Terminal::prompt(VGA::Color::Magenta, "INTRHW",
+			                 ISR::interruptMessages[registers->int_no]);
+		} else {
+			Terminal::prompt(VGA::Color::Magenta, "INTRHW",
+			                 Terminal::Mode::HexOnce, registers->int_no);
+		}
 		if(ISR::routines[registers->int_no]) {
 			ISR::routines[registers->int_no](registers);
 		} else {

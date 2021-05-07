@@ -15,6 +15,7 @@ typedef int64_t i64;
 
 typedef size_t    siz;
 typedef uintptr_t uptr;
+typedef intptr_t  iptr;
 
 struct Limits {
 	static const siz SizMax = SIZE_MAX;

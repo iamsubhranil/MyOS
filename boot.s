@@ -77,6 +77,11 @@ _start:
 	*/
 	/* kernelMain does that by calling appropriate functions */
 
+    // push multiboot headers
+    push %esp   // stack pointer
+    push %eax   // multiboot header magic
+    push %ebx   // multiboot header pointer
+
 	/*
 	Enter the high-level kernel. The ABI requires the stack is 16-byte
 	aligned at the time of the call instruction (which afterwards pushes
@@ -118,6 +123,16 @@ gdtFlush:
    jmp   $0x08, $reload_CS /* 0x08 points at the new code selector */
 
 reload_CS:
+   ret
+
+.global tssFlush
+
+tssFlush:
+   mov $0x2B, %ax      /* Load the index of our TSS structure - The index is
+                     ; 0x28, as it is the 5th selector and each is 8 bytes
+                     ; long, but we set the bottom two bits (making 0x2B)
+                     ; so that it has an RPL of 3, not zero. */
+   ltr %ax            /* Load 0x2B into the task state register. */
    ret
 
 /* IDTs */
@@ -375,6 +390,14 @@ _isr31:
 	cli
 	push $0
 	push $31
+	jmp isr_common_stub
+
+/* syscall interrupt */
+.global _isr_syscall
+_isr_syscall:
+	cli
+	push $0
+	push __isr_syscall_no /* defined in isr.cpp */
 	jmp isr_common_stub
 
 .global isr_common_stub

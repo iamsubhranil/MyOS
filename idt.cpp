@@ -1,8 +1,10 @@
 #include "idt.h"
 #include "asm.h"
+#include "syscall.h"
 #include "terminal.h"
 
 extern "C" {
+u8 __isr_syscall_no = Syscall::InterruptNumber;
 
 // isr stubs written in boot.s
 extern void _isr0();
@@ -37,6 +39,7 @@ extern void _isr28();
 extern void _isr29();
 extern void _isr30();
 extern void _isr31();
+extern void _isr_syscall();
 }
 
 IDT::Entry   IDT::entries[256] = {{0, 0, 0, 0, 0}};
@@ -53,7 +56,7 @@ void IDT::setGate(u8 num, uptr base, u16 sel, u8 flags) {
 	 *  is set here, along with any access flags */
 	entries[num].sel     = sel;
 	entries[num].always0 = 0;
-	entries[num].flags   = flags;
+	entries[num].flags   = flags | 0x60;
 }
 
 /* Installs the IDT */
@@ -107,6 +110,7 @@ void IDT::init() {
 	setGate(29, (uptr)_isr29, 0x08, 0x8E);
 	setGate(30, (uptr)_isr30, 0x08, 0x8E);
 	setGate(31, (uptr)_isr31, 0x08, 0x8E);
+	setGate(Syscall::InterruptNumber, (uptr)_isr_syscall, 0x08, 0x8E);
 
 	Terminal::prompt(VGA::Color::Brown, "IDT", "Installing changes..");
 	/* Points the processor's internal register to the new IDT */
