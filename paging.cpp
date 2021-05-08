@@ -9,8 +9,8 @@
 u32 *              Paging::Frame::frames               = NULL;
 siz                Paging::Frame::numberOfFrames       = 0;
 siz                Paging::Frame::numberOfSets         = 0;
-Paging::Directory *Paging::Directory::currentDirectory = NULL;
-Paging::Directory *Paging::Directory::kernelDirectory  = NULL;
+Paging::Directory *Paging::Directory::CurrentDirectory = NULL;
+Paging::Directory *Paging::Directory::KernelDirectory  = NULL;
 
 void Paging::Frame::set(uptr addr) {
 	uptr frame = addr / Paging::PageSize;
@@ -114,7 +114,7 @@ void Paging::Frame::init() {
 }
 
 void Paging::switchPageDirectory(Paging::Directory *dir) {
-	Directory::currentDirectory = dir;
+	Directory::CurrentDirectory = dir;
 	asm volatile("mov %0, %%cr3" ::"r"(&dir->tablesPhysical));
 	u32 cr0;
 	asm volatile("mov %%cr0, %0" : "=r"(cr0));
@@ -152,6 +152,60 @@ Paging::Page *Paging::getPage(uptr address, bool create,
 		return &dir->tables[table_idx]->pages[pageno];
 	} else {
 		return NULL;
+	}
+}
+
+Paging::Directory *Paging::Directory::clone() const {
+	uptr       phys;
+	Directory *dir = (Directory *)Memory::alloc_a(sizeof(Directory), phys);
+	memset(dir, 0, sizeof(Directory));
+
+	uptr offset       = (uptr)&dir->tablesPhysical - (uptr)dir;
+	dir->physicalAddr = phys + offset;
+
+	for(siz i = 0; i < Paging::TablesPerDirectory; i++) {
+		if(!tables[i])
+			continue;
+		// check if the table corresponds to a table
+		// in the kernel directory. if it does,
+		// we're not gonna copy it, we're gonna
+		// directly link it.
+		if(KernelDirectory->tables[i] == tables[i]) {
+			dir->tables[i]         = tables[i];
+			dir->tablesPhysical[i] = tablesPhysical[i];
+		} else {
+			uptr phys;
+			dir->tables[i]         = tables[i]->clone(phys);
+			dir->tablesPhysical[i] = phys | 0x07; // Present, RW, User
+		}
+	}
+
+	return dir;
+}
+
+Paging::Table *Paging::Table::clone(uptr &phys) const {
+	Table *table = (Table *)Memory::alloc_a(sizeof(Table), phys);
+	memset(table, 0, sizeof(Table));
+
+	for(siz i = 0; i < Paging::PagesPerTable; i++) {
+		if(!pages[i].frame) // unallocated page, don't bother
+			continue;
+		// alloc a new frame
+		table->pages[i].alloc(false, false, 0);
+
+		// clone the flags
+		table->pages[i].present  = pages[i].present;
+		table->pages[i].rw       = pages[i].rw;
+		table->pages[i].user     = pages[i].user;
+		table->pages[i].accessed = pages[i].accessed;
+		table->pages[i].dirty    = pages[i].dirty;
+
+		// finally, memcpy the data.
+		// we shouldn't really need to use assembly and/or
+		// disable paging here
+		memcpy((void *)(uptr)(table->pages[i].frame * Paging::PageSize),
+		       (void *)(uptr)(pages[i].frame * Paging::PageSize),
+		       Paging::PageSize);
 	}
 }
 
@@ -198,57 +252,54 @@ void Paging::handlePageFault(Register *regs) {
 
 void Paging::init() {
 	Terminal::info("Setting up paging..");
-
-	Terminal::prompt(VGA::Color::Brown, "Paging", "Setting up frames..");
+	PROMPT_INIT("Paging", Brown);
+	PROMPT("Setting up frames..");
 	Frame::init();
 
-	Terminal::prompt(VGA::Color::Brown, "Paging",
-	                 "Creating kernel page directory..");
-	Directory::kernelDirectory =
+	PROMPT("Creating kernel page directory..");
+	Directory::KernelDirectory =
 	    (Directory *)Memory::alloc_a(sizeof(Directory));
-	memset(Directory::kernelDirectory, 0, sizeof(Directory));
+	memset(Directory::KernelDirectory, 0, sizeof(Directory));
 
-	Directory::currentDirectory = Directory::kernelDirectory;
+	Directory::KernelDirectory->physicalAddr =
+	    (uptr)&Directory::KernelDirectory->tablesPhysical;
 
-	Terminal::prompt(VGA::Color::Brown, "Paging", "Allocating kernel heap..");
+	PROMPT("Allocating kernel heap..");
 	Heap *heap = (Heap *)Memory::alloc(sizeof(Heap));
 
-	Terminal::prompt(VGA::Color::Brown, "Paging",
-	                 "Allocating pages for kernel heap..");
+	PROMPT("Allocating pages for kernel heap..");
 	uptr i = 0;
 	for(i = Heap::Start; i < Heap::Start + Heap::InitialSize;
 	    i += Paging::PageSize) {
-		getPage(i, true, Directory::kernelDirectory);
+		getPage(i, true, Directory::KernelDirectory);
 	}
 
-	Terminal::prompt(VGA::Color::Brown, "Paging",
-	                 "Allocating frames for kernel memory..");
+	PROMPT("Allocating frames for kernel memory and heap..");
 	i              = 0;
 	uptr lastFrame = 0;
 	while(i < Memory::placementAddress) {
-		lastFrame = getPage(i, true, Directory::kernelDirectory)
+		lastFrame = getPage(i, true, Directory::KernelDirectory)
 		                ->alloc(true, false, lastFrame);
 		i += Paging::PageSize;
 	}
 
-	Terminal::prompt(VGA::Color::Brown, "Paging",
-	                 "Allocating frames for kernel heap..");
 	i = 0;
 	for(i = Heap::Start; i < Heap::Start + Heap::InitialSize;
 	    i += Paging::PageSize) {
-		lastFrame = getPage(i, false, Directory::kernelDirectory)
+		lastFrame = getPage(i, false, Directory::KernelDirectory)
 		                ->alloc(true, false, lastFrame);
 	}
 
-	Terminal::prompt(VGA::Color::Brown, "Paging",
-	                 "Setting up page fault handler..");
+	PROMPT("Setting up page fault handler..");
 	ISR::installHandler(14, handlePageFault);
 
-	// return;
-	Terminal::prompt(VGA::Color::Brown, "Paging", "Switching page directory..");
-	switchPageDirectory(Directory::kernelDirectory);
+	PROMPT("Cloning kernel directory..");
+	Directory::CurrentDirectory = Directory::KernelDirectory->clone();
 
-	Terminal::prompt(VGA::Color::Brown, "Paging", "Initalizing kernel heap..");
+	PROMPT("Switching page directory..");
+	switchPageDirectory(Directory::KernelDirectory);
+
+	PROMPT("Initalizing kernel heap..");
 	Memory::kernelHeap = heap;
 	Memory::kernelHeap->init(Heap::Start, Heap::Start + Heap::InitialSize,
 	                         Heap::Start + Heap::MaxSize, false, false);

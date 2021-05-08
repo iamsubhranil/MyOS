@@ -54,7 +54,7 @@ void Heap::expand(siz newSize) {
 	siz oldSize = end - start;
 	siz i       = oldSize;
 	while(i < newSize) {
-		Paging::getPage(start + i, 1, Paging::Directory::kernelDirectory)
+		Paging::getPage(start + i, 1, Paging::Directory::KernelDirectory)
 		    ->alloc(isSupervisorOnly(), isReadOnly());
 		i += Paging::PageSize;
 	}
@@ -70,7 +70,7 @@ siz Heap::contract(siz newSize) {
 	siz oldSize = end - start;
 	siz i       = oldSize - Paging::PageSize;
 	while(newSize < i) {
-		Paging::getPage(start + i, 0, Paging::Directory::kernelDirectory)
+		Paging::getPage(start + i, 0, Paging::Directory::KernelDirectory)
 		    ->free();
 		i -= Paging::PageSize;
 	}

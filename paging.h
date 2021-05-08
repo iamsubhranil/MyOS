@@ -70,6 +70,8 @@ struct Paging {
 
 	struct Table {
 		Page pages[PagesPerTable];
+
+		Table *clone(uptr &phys) const;
 	};
 
 	struct Directory {
@@ -86,8 +88,10 @@ struct Paging {
 		*/
 		siz physicalAddr;
 
-		static Directory *currentDirectory;
-		static Directory *kernelDirectory;
+		static Directory *CurrentDirectory;
+		static Directory *KernelDirectory;
+
+		Directory *clone() const;
 	};
 
 	static void  init();

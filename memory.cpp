@@ -16,7 +16,7 @@ void *Memory::alloc(siz size, uptr &phys) {
 	if(kernelHeap) {
 		void *        addr = kernelHeap->alloc(size, false);
 		Paging::Page *page = Paging::getPage(
-		    (uptr)addr, false, Paging::Directory::kernelDirectory);
+		    (uptr)addr, false, Paging::Directory::KernelDirectory);
 		phys = page->frame * Paging::PageSize +
 		       ((uptr)addr & (Paging::PageSize - 1));
 		return addr;
@@ -37,7 +37,7 @@ void *Memory::alloc_a(siz size, uptr &phys) {
 	if(kernelHeap) {
 		void *        addr = kernelHeap->alloc(size, true);
 		Paging::Page *page = Paging::getPage(
-		    (uptr)addr, false, Paging::Directory::kernelDirectory);
+		    (uptr)addr, false, Paging::Directory::KernelDirectory);
 		phys = page->frame * Paging::PageSize +
 		       ((uptr)addr & (Paging::PageSize - 1));
 		return addr;

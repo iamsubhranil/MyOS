@@ -3,6 +3,12 @@
 #include "myos.h"
 #include "vga.h"
 
+#define PROMPT_INIT(name, color)        \
+	const char *__prompt_header = name; \
+	VGA::Color  __prompt_color  = VGA::Color::color;
+#define PROMPT(...) \
+	Terminal::prompt(__prompt_color, __prompt_header, __VA_ARGS__);
+
 struct Terminal {
 
 	enum class Mode {
