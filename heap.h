@@ -4,11 +4,7 @@
 #include "ordered_array.h"
 
 struct Heap {
-	static const uptr Start       = 0xC0000000;
-	static const siz  InitialSize = 0x400000;
-	static const siz  MaxSize     = 0xFFFF000; // 256 MiB
-	static const siz  IndexSize   = 0x20000;
-	static const siz  MinSize     = 0x70000;
+	static const uptr Start = 0xD0000000;
 
 	// block header
 	struct Header {
@@ -26,6 +22,12 @@ struct Heap {
 			return a->size < b->size;
 		}
 	};
+
+	static const siz IndexCount  = 0x20000;
+	static const siz IndexSize   = sizeof(Header) * IndexCount;
+	static const siz MinHeapSize = 0x400000;
+	static const siz MaxHeapSize = 0xFFFF000; // 256 MiB
+	static const siz InitialSize = IndexSize + MinHeapSize;
 
 	// block footer
 	struct Footer {

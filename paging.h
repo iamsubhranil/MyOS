@@ -42,7 +42,7 @@ struct Paging {
 		static void clear(uptr addr);
 		static bool test(uptr addr);
 
-		static uptr findFirstFreeFrame(uptr lastFrame = 0);
+		static bool findFirstFreeFrame(uptr &freeFrame, uptr lastFrame = 0);
 		// searches in the given range (inclusive in to_index, exclusive in
 		// to_offset)
 		static bool searchInRange(uptr from_index, uptr to_index, uptr &result);
@@ -92,11 +92,25 @@ struct Paging {
 		static Directory *KernelDirectory;
 
 		Directory *clone() const;
+
+		void dump() const;
 	};
 
+	static constexpr siz getTableIndex(uptr address) {
+		return (address / (PageSize * PagesPerTable));
+	}
+	static constexpr siz getPageNo(uptr address) {
+		return (address / PageSize) & (PagesPerTable - 1);
+	}
 	static void  init();
 	static void  switchPageDirectory(Directory *newDirectory);
 	static Page *getPage(uptr address, bool createIfAbsent, Directory *dir);
+	// unmaps the page within which the address
+	// resides, also invalidates the page in tlb.
+	// if the table for the page does not exist, it does nothing.
+	// if it is a soft reset, it does not call Frame::free, assuming
+	// that this frame may be referenced by another page.
+	static void resetPage(uptr address, Directory *dir, bool soft = false);
 
 	static void handlePageFault(Register *r);
 };

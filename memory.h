@@ -4,6 +4,7 @@
 
 struct Heap;
 struct Memory {
+
 	static constexpr siz Size = 0x1000000; // 16MiB for now
 	static Heap *        kernelHeap;
 	static uptr          placementAddress;

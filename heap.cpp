@@ -1,5 +1,6 @@
 #include "heap.h"
 #include "paging.h"
+#include "stacktrace.h"
 #include "terminal.h"
 
 siz Heap::findSmallestHole(siz size, bool pageAlign) {
@@ -14,8 +15,7 @@ siz Heap::findSmallestHole(siz size, bool pageAlign) {
 					offset = Paging::PageSize - ((location + sizeof(Header)) &
 					                             (Paging::PageSize - 1));
 				}
-				siz holeSize = header->size - offset;
-				if(holeSize >= size)
+				if(header->size >= offset + size)
 					break;
 			} else
 				break;
@@ -32,7 +32,7 @@ void Heap::init(uptr s, uptr e, siz m, bool supervisorOnly, bool readOnly) {
 	start = s;
 	// move forward to the first available location,
 	// rest are already occupied by the index.
-	start += sizeof(Header) * IndexSize;
+	start += IndexSize;
 
 	Paging::alignIfNeeded(start);
 
@@ -64,11 +64,14 @@ void Heap::expand(siz newSize) {
 siz Heap::contract(siz newSize) {
 	Paging::alignIfNeeded(newSize);
 
-	if(newSize < Heap::MinSize)
-		newSize = MinSize;
+	if(newSize < Heap::MinHeapSize)
+		newSize = Heap::MinHeapSize;
 
 	siz oldSize = end - start;
-	siz i       = oldSize - Paging::PageSize;
+	if(oldSize == newSize)
+		return oldSize;
+	// our last page actually starts from an index before
+	siz i = oldSize - Paging::PageSize;
 	while(newSize < i) {
 		Paging::getPage(start + i, 0, Paging::Directory::KernelDirectory)
 		    ->free();
@@ -205,7 +208,6 @@ void Heap::free(void *p) {
 	// we may or may not want to add this header to free holes index, depending
 	// on the left and right holes
 	bool addToIndex = true;
-
 	// try to unify left hole
 	Footer *leftFooter = (Footer *)((uptr)header - sizeof(Footer));
 	if(leftFooter->magic == Footer::Magic &&

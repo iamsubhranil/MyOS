@@ -48,29 +48,37 @@ struct Terminal {
 	static u16  getEntryFrom(u16 x, u16 y);
 	static void moveUpOneRow();
 
-	static u32 write_hex(u64 value);
-	static u32 write_dec(u64 value);
-	static u32 write_bin(u64 value);
+	static u32 write_hex(const u64 &value);
+	static u32 write_dec(const u64 &value);
+	static u32 write_bin(const u64 &value);
 
-	static u32 writebytes(const char *data, siz len);
-	static u32 write(const char *data);
-	static u32 write(char c);
-	static u32 write(u64 value);
-	static u32 write(u32 value) {
+	static u32 writebytes(const char *const &data, siz len);
+	static u32 write(const char *const &data);
+	static u32 write(const char &c);
+	static u32 write(const u64 &value);
+	static u32 write(const u32 &value) {
 		return write((u64)value);
 	}
-	static u32 write(u16 value) {
+	static u32 write(const u16 &value) {
 		return write((u64)value);
 	}
-	static u32 write(i64 value);
-	static u32 write(i32 value) {
+	static u32 write(const u8 &value) {
+		return write((u64)value);
+	}
+	static u32 write(const i64 &value);
+	static u32 write(const i32 &value) {
 		return write((i64)value);
 	}
-	static u32 write(i16 value) {
+	static u32 write(const i16 &value) {
 		return write((i64)value);
 	}
-	static u32 write(void *value) {
-		return write(Mode::Hex, (u32)value, Mode::Reset);
+	static u32 write(void *const &value) {
+		return write(Mode::Hex, (uptr)value, Mode::Reset);
+	}
+	static u32 write(const bool &value) {
+		if(value)
+			return write("true");
+		return write("false");
 	}
 	static u32 write(Mode m);
 	static u32 write(Move m);

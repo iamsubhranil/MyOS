@@ -1,9 +1,10 @@
 #include "memory.h"
 #include "heap.h"
+#include "kernel_layout.h"
 #include "paging.h"
 
-extern u32 end; // defined in linker script
-uptr       Memory::placementAddress = (uptr)&end;
+extern u32 __ld_kernel_end; // defined in linker script
+uptr       Memory::placementAddress = (uptr)&__ld_kernel_end;
 Heap *     Memory::kernelHeap       = NULL;
 
 void *Memory::alloc(siz size) {
@@ -21,7 +22,7 @@ void *Memory::alloc(siz size, uptr &phys) {
 		       ((uptr)addr & (Paging::PageSize - 1));
 		return addr;
 	}
-	phys = placementAddress;
+	phys = V2P(placementAddress);
 	return alloc(size);
 }
 
@@ -43,7 +44,7 @@ void *Memory::alloc_a(siz size, uptr &phys) {
 		return addr;
 	}
 	Paging::alignIfNeeded(placementAddress);
-	phys = placementAddress;
+	phys = V2P(placementAddress);
 	return alloc(size);
 }
 

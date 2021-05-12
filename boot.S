@@ -1,7 +1,10 @@
+#include "kernel_layout.h"
+
 /* Declare constants for the multiboot header. */
-.set ALIGN,    1<<0             /* align loaded modules on page boundaries */
-.set MEMINFO,  1<<1             /* provide memory map */
-.set FLAGS,    ALIGN | MEMINFO  /* this is the Multiboot 'flag' field */
+.set ALIGN,     1<<0            /* align loaded modules on page boundaries */
+.set MEMINFO,   1<<1            /* provide memory map */
+.set VIDEO,     1<<2            /* provide info about video mode */
+.set FLAGS,    ALIGN | MEMINFO | VIDEO  /* this is the Multiboot 'flag' field */
 .set MAGIC,    0x1BADB002       /* 'magic number' lets bootloader find the header */
 .set CHECKSUM, -(MAGIC + FLAGS) /* checksum of above, to prove we are multiboot */
 
@@ -17,6 +20,15 @@ forced to be within the first 8 KiB of the kernel file.
 .long MAGIC
 .long FLAGS
 .long CHECKSUM
+.long 0x00000000 // header_addr
+.long 0x00000000 // load_addr
+.long 0x00000000 // load_end_addr
+.long 0x00000000 // bss_end_addr
+.long 0x00000000 // entry_addr
+.long 0 // linear framebuffer
+.long 1024 // width
+.long 768 // height
+.long 32 // bpp
 
 /*
 The multiboot standard does not define the value of the stack pointer register
@@ -36,60 +48,88 @@ stack_bottom:
 .skip 16384 # 16 KiB
 stack_top:
 
-/*
-The linker script specifies _start as the entry point to the kernel and the
-bootloader will jump to this position once the kernel has been loaded. It
-doesn't make sense to return from this function as the bootloader is gone.
-*/
+// Preallocate pages used for paging. Don't hard-code addresses and assume they
+// are available, as the bootloader might have loaded its multiboot structures or
+// modules there. This lets the bootloader know it must avoid the addresses.
+.section .data, "aw"
+    .align 4096
+.global boot_page_directory
+boot_page_directory:
+    .fill 1024, 4, 0
+boot_page_table1:
+    .fill 1024, 4, 0
+
 .section .text
 .global _start
 .type _start, @function
 _start:
-	/*
-	The bootloader has loaded us into 32-bit protected mode on a x86
-	machine. Interrupts are disabled. Paging is disabled. The processor
-	state is as defined in the multiboot standard. The kernel has full
-	control of the CPU. The kernel can only make use of hardware features
-	and any code it provides as part of itself. There's no printf
-	function, unless the kernel provides its own <stdio.h> header and a
-	printf implementation. There are no security restrictions, no
-	safeguards, no debugging mechanisms, only what the kernel provides
-	itself. It has absolute and complete power over the
-	machine.
-	*/
 
-	/*
-	To set up a stack, we set the esp register to point to the top of our
-	stack (as it grows downwards on x86 systems). This is necessarily done
-	in assembly as languages such as C cannot function without a stack.
-	*/
-	mov $stack_top, %esp
+    // first, let's set up a page table for our initial loader
+    // Physical address of boot_page_table1.
+    movl $V2P_WO(boot_page_table1), %edi
+    movl $0, %esi
+    // Map 1024 pages
+    movl $1024, %ecx
 
-	/*
-	This is a good place to initialize crucial processor state before the
-	high-level kernel is entered. It's best to minimize the early
-	environment where crucial features are offline. Note that the
-	processor is not fully initialized yet: Features such as floating
-	point instructions and instruction set extensions are not initialized
-	yet. The GDT should be loaded here. Paging should be enabled here.
-	C++ features such as global constructors and exceptions will require
-	runtime support to work as well.
-	*/
-	/* kernelMain does that by calling appropriate functions */
+.page_table_loop:
+    // Map physical address as "present, writable". Note that this maps
+    // .text and .rodata as writable. Mind security and map them as non-writable.
+    movl %esi, %edx
+    orl $(PTE_PRESENT | PTE_WRITABLE | PTE_USER), %edx
+    movl %edx, (%edi)
+
+    // Size of page is 4096 bytes.
+    addl $4096, %esi
+    // Size of entries in boot_page_table1 is 4 bytes.
+    addl $4, %edi
+
+    // Map until the end of the kernel (OR MAP ALL 1024 PAGES!!)
+    // cmpl $V2P_WO(__ld_kernel_end), %esi
+    // jge 3f
+
+    // Loop to the next entry if we haven't finished.
+    // this will continue until ecx = 0
+    loop .page_table_loop
+3:
+    // Map the page table to both virtual addresses 0x00000000 and 0xC0000000.
+    movl $V2P_WO(boot_page_table1), %ecx
+    orl $(PDE_PRESENT | PDE_WRITABLE | PDE_USER), %ecx
+
+    movl %ecx, V2P_WO(boot_page_directory) + 0
+    movl %ecx, V2P_WO(boot_page_directory) + 0xc00
+
+    // Set cr3 to the address of the boot_page_directory.
+    movl $V2P_WO(boot_page_directory), %ecx
+    movl %ecx, %cr3
+
+    // Enable paging and the write-protect bit.
+    movl %cr0, %ecx
+    orl $0x80000001, %ecx
+    movl %ecx, %cr0
+
+    // Jump to higher half with an absolute jump.
+    lea 1f, %ecx
+    jmp *%ecx
+
+1:
+    // At this point, paging is fully set up and enabled.
+    // Unmap the identity mapping as it is now unnecessary.
+    movl $0, boot_page_directory + 0
+
+    // Reload crc3 to force a TLB flush so the changes to take effect.
+    // movl %cr3, %ecx
+    // movl %ecx, %cr3
+
+    // invalidate page at 0x00000000
+    invlpg (0)
+
+    // Set up the stack.
+    movl $stack_top, %esp
 
     // push multiboot headers
-    push %esp   // stack pointer
-    push %eax   // multiboot header magic
+    addl $KMEM_BASE, %ebx // make it a virtual address
     push %ebx   // multiboot header pointer
-
-	/*
-	Enter the high-level kernel. The ABI requires the stack is 16-byte
-	aligned at the time of the call instruction (which afterwards pushes
-	the return pointer of size 4 bytes). The stack was originally 16-byte
-	aligned above and we've since pushed a multiple of 16 bytes to the
-	stack since (pushed 0 bytes so far) and the alignment is thus
-	preserved and the call is well defined.
-	*/
+    xor %ebp, %ebp // set ebp to 0 so we know where to stop which stacktracking
 	call kernelMain
 
 	/*

@@ -36,4 +36,8 @@ struct Asm {
 		 * to %dx because  port  is a u16.  %w1 could be used if we had the port
 		 * number a wider C type */
 	}
+
+	static inline void invlpg(uptr address) {
+		asm volatile("invlpg (%0)" ::"r"(address) : "memory");
+	}
 };

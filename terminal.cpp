@@ -1,4 +1,6 @@
 #include "terminal.h"
+#include "kernel_layout.h"
+#include "multiboot.h"
 #include "string.h"
 #include "vga.h"
 
@@ -16,7 +18,7 @@ void Terminal::init() {
 	row    = 0;
 	column = 0;
 	color  = VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
-	buffer = (u16 *)0xB8000;
+	buffer = (u16 *)P2V(0xB8000);
 	for(u16 y = 0; y < VGA::Height; y++) {
 		for(u16 x = 0; x < VGA::Width; x++) {
 			const u16 index = y * VGA::Width + x;
@@ -68,58 +70,62 @@ void Terminal::moveUpOneRow() {
 	column = 0;
 }
 
-u32 Terminal::write(char c) {
-	if(c == '\n') {
-		column = VGA::Width - 1;
-	} else if(c == '\r') {
-		column = 0;
-	} else if(c == '\b') {
-		if(column == 0) {
-			column = VGA::Width - 2;
-			row--;
-		} else
-			column -= 2;
-	} else {
-		putEntryAt(c, color, column, row);
+u32 Terminal::write(const char &c) {
+	switch(c) {
+		case '\n': column = VGA::Width - 1; break;
+		case '\r': column = 0; return 1; // we don't want to adjust anything
+		case '\b': {
+			if(column == 0) {
+				column = VGA::Width - 2;
+				row--;
+			} else
+				column -= 2;
+		} break;
+		case '\t':
+			write(' ');
+			write(' ');
+			write(' ');
+			return write(' ');
+		default: putEntryAt(c, color, column, row); break;
 	}
-	if(c != '\r') {
-		if(++column == VGA::Width) {
-			column = 0;
-			if(++row == VGA::Height) {
-				// row = 0;
-				moveUpOneRow();
-			}
+	if(++column == VGA::Width) {
+		column = 0;
+		if(++row == VGA::Height) {
+			// row = 0;
+			moveUpOneRow();
 		}
 	}
+
 	return 1;
 }
 
-u32 Terminal::writebytes(const char *data, siz size) {
+u32 Terminal::writebytes(const char *const &data, siz size) {
 	for(u16 i = 0; i < size; i++) write(data[i]);
 	return size;
 }
 
-u32 Terminal::write(const char *data) {
+u32 Terminal::write(const char *const &data) {
 	return writebytes(data, strlen(data));
 }
 
-u32 Terminal::write_dec(u64 value) {
+u32 Terminal::write_dec(const u64 &value) {
 	if(value == 0) {
 		write('0');
 		return 1;
 	}
 	char str[20] = {'0'};
 	u8   start   = 20;
-	while(value > 0) {
+	u64  bak     = value;
+	while(bak > 0) {
 		--start;
-		u8 dig     = value % 10;
+		u8 dig     = bak % 10;
 		str[start] = '0' + dig;
-		value /= 10;
+		bak /= 10;
 	}
 	return writebytes(&str[start], 20 - start);
 }
 
-u32 Terminal::write_hex(u64 value) {
+u32 Terminal::write_hex(const u64 &value) {
 	Terminal::write("0x");
 	if(value == 0) {
 		Terminal::write('0');
@@ -127,19 +133,20 @@ u32 Terminal::write_hex(u64 value) {
 	}
 	char str[16] = {'0'};
 	u8   start   = 16;
-	while(value > 0) {
+	u64  bak     = value;
+	while(bak > 0) {
 		--start;
-		u8 last = value & 0xf;
+		u8 last = bak & 0xf;
 		if(last < 10)
 			str[start] = '0' + last;
 		else
 			str[start] = 'A' + (last - 10);
-		value >>= 4;
+		bak >>= 4;
 	}
 	return writebytes(&str[start], 16 - start) + 2;
 }
 
-u32 Terminal::write_bin(u64 value) {
+u32 Terminal::write_bin(const u64 &value) {
 	Terminal::write("0b");
 	if(value == 0) {
 		Terminal::write('0');
@@ -147,15 +154,16 @@ u32 Terminal::write_bin(u64 value) {
 	}
 	char str[64] = {'0'};
 	u8   start   = 64;
-	while(value > 0) {
+	u64  bak     = value;
+	while(bak > 0) {
 		--start;
-		str[start] = '0' + (value & 1);
-		value >>= 1;
+		str[start] = '0' + (bak & 1);
+		bak >>= 1;
 	}
 	return writebytes(&str[start], 64 - start) + 2;
 }
 
-u32 Terminal::write(u64 value) {
+u32 Terminal::write(const u64 &value) {
 	u32 ret;
 	switch(currentMode) {
 		case Terminal::Mode::Dec: ret = write_dec(value); break;
@@ -178,14 +186,15 @@ u32 Terminal::write(u64 value) {
 	return ret;
 }
 
-u32 Terminal::write(i64 value) {
-	u8 add = 0;
+u32 Terminal::write(const i64 &value) {
+	i64 bak = value;
+	u8  add = 0;
 	if(value < 0) {
 		Terminal::write('-');
-		value = -value;
-		add   = 1;
+		bak = -value;
+		add = 1;
 	}
-	return write((u64)value) + add;
+	return write((u64)bak) + add;
 }
 
 u32 Terminal::write(VGA::Color c) {

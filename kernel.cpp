@@ -33,11 +33,11 @@ extern "C" { /* Use C linkage for kernel_main. */
 #endif
 
 // entry-point
-void kernelMain(Multiboot *mboot, u32 mbootMagic, uptr esp) {
-	(void)mbootMagic;
-	(void)esp;
+void kernelMain(Multiboot *mboot) {
 	Terminal::init();
 	mboot->dump();
+	// reinit paging
+	Paging::init();
 	// disable interrupts before setting up gdt, idt and irqs
 	Asm::cli();
 	GDT::init();
@@ -45,23 +45,19 @@ void kernelMain(Multiboot *mboot, u32 mbootMagic, uptr esp) {
 	IRQ::init();
 	// we are all done, now enable interrupts
 	Asm::sti();
-	Paging::init();
 	Timer::init();
-	Syscall::init();
+	// Syscall::init();
 	// Task::switchToUserMode(esp);
 	while(1) {
-		Terminal::prompt(VGA::Color::Blue, "Kernel", "Allocating an u32..");
 		u32 *a = (u32 *)Memory::alloc(sizeof(u32));
 		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
 		                 Terminal::Mode::HexOnce, (void *)a, "..");
-		Terminal::prompt(VGA::Color::Blue, "Kernel", "Allocating an u32..");
 		u32 *b = (u32 *)Memory::alloc(sizeof(u32));
 		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
 		                 Terminal::Mode::HexOnce, (void *)b, "..");
 		Terminal::prompt(VGA::Color::Blue, "Kernel", "Releasing the u32s..");
 		Memory::free(a);
 		Memory::free(b);
-		Terminal::prompt(VGA::Color::Blue, "Kernel", "Allocating an u32..");
 		u32 *c = (u32 *)Memory::alloc(sizeof(u32));
 		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
 		                 Terminal::Mode::HexOnce, (void *)c, "..");

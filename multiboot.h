@@ -46,15 +46,40 @@ struct Multiboot {
 	u32 vbe_interface_seg;
 	u32 vbe_interface_off;
 	u32 vbe_interface_len;
-	u32 framebuffer_addr;
-	u32 framebuffer_pitch;
-	u32 framebuffer_width;
-	u32 framebuffer_height;
-	u8  framebuffer_bpp;
-	u8  framebuffer_type;
-	/* Palette stuff goes here but we don't use it */
 
 	void dump() const; // dump to terminal
+
+	struct Framebuffer {
+		enum Type : u8 {
+			Indexed = 0,
+			RGB     = 1,
+			EGAText = 2,
+		};
+
+		u32  addr;
+		u32  pitch;
+		u32  width;
+		u32  height;
+		u8   bpp;
+		Type type;
+
+		union {
+			struct {
+				u32 palette_addr;
+				u16 palette_num_colors;
+			};
+			struct {
+				u8 red_field_position;
+				u8 red_mask_size;
+				u8 green_field_position;
+				u8 green_mask_size;
+				u8 blue_field_position;
+				u8 blue_mask_size;
+			};
+		};
+	} __attribute__((packed));
+
+	Framebuffer frameBuffer;
 
 	struct Module {
 		u32 mod_start;
@@ -64,10 +89,19 @@ struct Multiboot {
 	} __attribute__((packed));
 
 	struct MemoryMap {
-		u32 size;
-		u64 base_addr;
-		u64 length;
-		u32 type;
+		enum Type : u32 {
+			Usable      = 1,
+			Reserved    = 2,
+			AcpiReclaim = 3,
+			AcpiNvs     = 4,
+			BadMem      = 5
+		};
+
+		u32  size;
+		u64  base_addr;
+		u64  length;
+		Type type;
+		// u32  acpi3ea;
 	} __attribute__((packed));
 
 	struct VbeInfo {

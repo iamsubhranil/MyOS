@@ -2,7 +2,9 @@
 #include "asm.h"
 #include "heap.h"
 #include "isr.h"
+#include "kernel_layout.h"
 #include "memory.h"
+#include "stacktrace.h"
 #include "string.h"
 #include "terminal.h"
 
@@ -43,22 +45,21 @@ bool Paging::Frame::searchInRange(uptr fri, uptr toi, uptr &result) {
 	return false;
 }
 
-uptr Paging::Frame::findFirstFreeFrame(uptr lastFrame) {
-	siz  lastIndex = index(lastFrame);
-	uptr frame     = 0;
-	if(searchInRange(lastIndex, numberOfSets, frame)) {
-		return frame;
+bool Paging::Frame::findFirstFreeFrame(uptr &result, uptr lastFrame) {
+	siz lastIndex = index(lastFrame);
+	if(searchInRange(lastIndex, numberOfSets, result)) {
+		return true;
 	}
 
 	// if we already started searching from the beginning, we're done
 	if(lastIndex == 0)
-		return -1;
+		return false;
 
 	// else, search from the beginning
-	if(searchInRange(0, lastIndex, frame)) {
-		return frame;
+	if(searchInRange(0, lastIndex, result)) {
+		return true;
 	}
-	return -1;
+	return false;
 }
 
 u32 Paging::Page::dump() const {
@@ -82,8 +83,8 @@ uptr Paging::Page::alloc(bool isKernel, bool isWritable, uptr lastFrame) {
 		// Terminal::write(" -> No alloc!\n");
 		return frame;
 	}
-	siz idx = Frame::findFirstFreeFrame(lastFrame);
-	if(idx == (siz)-1) {
+	siz idx;
+	if(!Frame::findFirstFreeFrame(idx, lastFrame)) {
 		Terminal::err("No free frames!");
 		for(;;)
 			;
@@ -101,7 +102,8 @@ void Paging::Page::free() {
 	if(!frame)
 		return;
 	Frame::clear(frame * Paging::PageSize);
-	frame = 0;
+	frame   = 0;
+	present = 0;
 }
 
 void Paging::Frame::init() {
@@ -114,26 +116,24 @@ void Paging::Frame::init() {
 }
 
 void Paging::switchPageDirectory(Paging::Directory *dir) {
+	// set up new directory
 	Directory::CurrentDirectory = dir;
-	asm volatile("mov %0, %%cr3" ::"r"(&dir->tablesPhysical));
-	u32 cr0;
-	asm volatile("mov %%cr0, %0" : "=r"(cr0));
-	cr0 |= 0x80000000; // Enable paging!
-	asm volatile("mov %0, %%cr0" ::"r"(cr0));
+	uptr tableloc               = (uptr)V2P(&dir->tablesPhysical);
+	asm volatile("mov %0, %%cr3" ::"r"(tableloc));
 }
 
 Paging::Page *Paging::getPage(uptr address, bool create,
                               Paging::Directory *dir) {
-	// Terminal::write(Terminal::Mode::HexOnce, "Address: ", address, " ");
+	// Terminal::write(Terminal::Mode::Hex, "Address: ", address, " ");
 
 	// Turn the address into an index.
 	// Find the page table containing this address.
-	siz table_idx = address / (PageSize * PagesPerTable);
-	siz pageno    = (address / PageSize) & (PagesPerTable - 1);
+	// find the overall page no
+	siz table_idx = getTableIndex(address);
+	siz pageno    = getPageNo(address);
 
 	// Terminal::write("  TableIdx: ", table_idx, " PageNo: ", pageno, " ",
-	//                address / PageSize, " ", PagesPerTable - 1,
-	//                Terminal::Mode::Reset, "\n");
+	//                address / PageSize, Terminal::Mode::Reset, "\n");
 
 	if(dir->tables[table_idx]) { // If this table is already assigned
 		// Terminal::write(table_idx, " Page already exists!\n");
@@ -152,6 +152,20 @@ Paging::Page *Paging::getPage(uptr address, bool create,
 		return &dir->tables[table_idx]->pages[pageno];
 	} else {
 		return NULL;
+	}
+}
+
+void Paging::resetPage(uptr address, Paging::Directory *dir, bool soft) {
+	siz table_idx = getTableIndex(address);
+	siz pageno    = getPageNo(address);
+	if(dir->tables[table_idx]) {
+		if(!soft) {
+			dir->tables[table_idx]->pages[pageno].free();
+		} else {
+			dir->tables[table_idx]->pages[pageno].frame   = 0;
+			dir->tables[table_idx]->pages[pageno].present = 0;
+		}
+		Asm::invlpg(address);
 	}
 }
 
@@ -207,6 +221,30 @@ Paging::Table *Paging::Table::clone(uptr &phys) const {
 		       (void *)(uptr)(pages[i].frame * Paging::PageSize),
 		       Paging::PageSize);
 	}
+	return table;
+}
+
+void Paging::Directory::dump() const {
+	for(siz i = 0; i < TablesPerDirectory; i++) {
+		if(tables[i]) {
+			siz j = 0;
+			while(1) {
+				while(j < PagesPerTable && tables[i]->pages[j].present == 0)
+					j++;
+				if(j == PagesPerTable)
+					break;
+				siz rangeStart = j;
+				while(j < PagesPerTable && tables[i]->pages[j].present) j++;
+				siz rangeEnd = j;
+				Terminal::write(
+				    Terminal::Mode::Hex,
+				    ((i * PagesPerTable) + (rangeStart)) * Paging::PageSize,
+				    " - ", ((i * PagesPerTable) + (rangeEnd)) * PageSize, ", ",
+				    Terminal::Mode::Reset);
+			}
+		}
+	}
+	Terminal::write("\n");
 }
 
 void Paging::handlePageFault(Register *regs) {
@@ -246,6 +284,7 @@ void Paging::handlePageFault(Register *regs) {
 	}
 	Terminal::write(") at ", Terminal::Mode::Hex, faulting_address,
 	                Terminal::Mode::Reset, "\n");
+	Stacktrace::print();
 	for(;;)
 		;
 }
@@ -256,16 +295,19 @@ void Paging::init() {
 	PROMPT("Setting up frames..");
 	Frame::init();
 
+	PROMPT("Setting up page fault handler..");
+	ISR::installHandler(14, handlePageFault);
+
 	PROMPT("Creating kernel page directory..");
 	Directory::KernelDirectory =
 	    (Directory *)Memory::alloc_a(sizeof(Directory));
 	memset(Directory::KernelDirectory, 0, sizeof(Directory));
 
 	Directory::KernelDirectory->physicalAddr =
-	    (uptr)&Directory::KernelDirectory->tablesPhysical;
+	    V2P((uptr)&Directory::KernelDirectory->tablesPhysical);
 
 	PROMPT("Allocating kernel heap..");
-	Heap *heap = (Heap *)Memory::alloc(sizeof(Heap));
+	Heap *heap = (Heap *)Memory::alloc_a(sizeof(Heap));
 
 	PROMPT("Allocating pages for kernel heap..");
 	uptr i = 0;
@@ -274,27 +316,25 @@ void Paging::init() {
 		getPage(i, true, Directory::KernelDirectory);
 	}
 
-	PROMPT("Allocating frames for kernel memory and heap..");
-	i              = 0;
+	// We need to create a mapping between our placement address,
+	// which is 0xc0000000 as specified in the linker script,
+	// with our physical address, which starts from 0.
+	// so, we set the lastFrame variable to 0 to ensure that
+	// the mapping starts from 0x00000000 frame address.
+	// For this reason, kernel memory must be the first thing that
+	// is mapped.
 	uptr lastFrame = 0;
-	while(i < Memory::placementAddress) {
+
+	PROMPT("Allocating frames for kernel memory and heap..");
+	for(i = KMEM_BASE; i < Memory::placementAddress; i += Paging::PageSize) {
 		lastFrame = getPage(i, true, Directory::KernelDirectory)
 		                ->alloc(true, false, lastFrame);
-		i += Paging::PageSize;
 	}
-
-	i = 0;
 	for(i = Heap::Start; i < Heap::Start + Heap::InitialSize;
 	    i += Paging::PageSize) {
 		lastFrame = getPage(i, false, Directory::KernelDirectory)
 		                ->alloc(true, false, lastFrame);
 	}
-
-	PROMPT("Setting up page fault handler..");
-	ISR::installHandler(14, handlePageFault);
-
-	PROMPT("Cloning kernel directory..");
-	Directory::CurrentDirectory = Directory::KernelDirectory->clone();
 
 	PROMPT("Switching page directory..");
 	switchPageDirectory(Directory::KernelDirectory);
@@ -302,7 +342,12 @@ void Paging::init() {
 	PROMPT("Initalizing kernel heap..");
 	Memory::kernelHeap = heap;
 	Memory::kernelHeap->init(Heap::Start, Heap::Start + Heap::InitialSize,
-	                         Heap::Start + Heap::MaxSize, false, false);
+	                         Heap::Start + Heap::InitialSize, false, false);
+
+	PROMPT("Dumping kernel directory: ");
+	Directory::KernelDirectory->dump();
+	PROMPT("Cloning kernel directory..");
+	Directory::CurrentDirectory = Directory::KernelDirectory->clone();
 
 	Terminal::done("Paging setup complete!");
 }
