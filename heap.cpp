@@ -144,7 +144,7 @@ void *Heap::alloc(siz size, bool pageAlign) {
 		newSize = origHoleSize;
 	}
 
-	if(pageAlign && !Paging::isAligned(origHolePos)) {
+	if(pageAlign && !Paging::isAligned(origHolePos + sizeof(Header))) {
 		uptr newLocation = origHolePos + Paging::PageSize -
 		                   (origHolePos & (Paging::PageSize - 1)) -
 		                   sizeof(Header);
