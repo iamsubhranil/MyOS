@@ -1,6 +1,7 @@
 #pragma once
 
 #include "myos.h"
+#include "paging.h"
 #include "string.h"
 
 struct Task {
@@ -60,4 +61,35 @@ struct Task {
 	static StateSegment taskStateSegment;
 
 	static void setKernelStack(uptr stack_);
+
+	enum State { Scheduled, Ready, Waiting };
+
+	static u32 NextPid;
+
+	// properties of a task
+	u32 id; // id of the task
+	// uptr ebp, eip, esp;
+	Register           regs;
+	Paging::Directory *pageDirectory;
+	Task *             next;
+	State              state;
+	typedef void (*Runner)();
+	Runner runner;
+
+	static const siz DefaultStackSize =
+	    1024 * 1024 * 4; // let's make it 4KiB for now
+	Task();
+	// the first time run is called, it saves the
+	// eip of the point from which runner() is started
+	void        run();
+	static void begin();
+	// fork requires copying the old stack, which requires changing
+	// ebp values, and that's a bit hackish. so we don't provide
+	// that for now.
+	// static u32  fork();   // creates a new task
+
+	static void switch_(Register *r); // performs the task switch
+
+	static void
+	    performTaskSwitch(volatile Task *t); // it forgets where it came from
 };

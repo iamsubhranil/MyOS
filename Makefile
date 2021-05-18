@@ -23,7 +23,14 @@ iso: myos.bin
 	grub-mkrescue -o myos.iso isodir
 
 start: myos.bin
-	qemu-system-x86_64 -kernel myos.bin $(QEMUFLAGS)
+	qemu-system-i386 -kernel myos.bin $(QEMUFLAGS)
+
+gdbstart:
+	gdb \
+    -ex "file myos.bin" \
+	-ex 'set arch auto' \
+    -ex 'target remote localhost:1234' \
+    -ex 'break kernelMain' \
 
 clean:
 	$(RM) -f $(OBJS) myos.bin
@@ -43,6 +50,9 @@ all: release
 release: CXXFLAGS += -O2
 release: boot linker start
 
-debug: CXXFLAGS += -O0 -g3
+debug: CXXFLAGS += -O0 -g3 -fno-omit-frame-pointer
 debug: QEMUFLAGS += -no-shutdown -no-reboot -d int -monitor stdio
 debug: boot linker start
+
+debug_gdb: QEMUFLAGS += -S -s
+debug_gdb: debug

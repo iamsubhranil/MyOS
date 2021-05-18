@@ -1,9 +1,10 @@
 #include "heap.h"
+#include "option.h"
 #include "paging.h"
 #include "stacktrace.h"
 #include "terminal.h"
 
-siz Heap::findSmallestHole(siz size, bool pageAlign) {
+Option<siz> Heap::findSmallestHole(siz size, bool pageAlign) {
 	siz i = 0;
 	while(i < index.size) {
 		Header *header = index.get(i);
@@ -22,8 +23,9 @@ siz Heap::findSmallestHole(siz size, bool pageAlign) {
 		}
 		i++;
 	}
-	if(i == index.size)
-		return -1;
+	if(i == index.size) {
+		return {};
+	}
 	return i;
 }
 
@@ -45,6 +47,9 @@ void Heap::init(uptr s, uptr e, siz m, bool supervisorOnly, bool readOnly) {
 	Header *hole = (Header *)start;
 	hole->size   = end - start;
 	hole->magic  = Header::Magic; // set is hole to true
+	Footer *f    = (Footer *)(end - sizeof(Footer));
+	f->magic     = Footer::Magic;
+	f->header    = hole;
 	index.insert(hole);
 }
 
@@ -52,10 +57,12 @@ void Heap::expand(siz newSize) {
 	Paging::alignIfNeeded(newSize);
 
 	siz oldSize = end - start;
-	siz i       = oldSize;
+	if(oldSize >= Heap::MaxHeapSize)
+		return;
+	siz i = oldSize;
 	while(i < newSize) {
-		Paging::getPage(start + i, 1, Paging::Directory::KernelDirectory)
-		    ->alloc(isSupervisorOnly(), isReadOnly());
+		Paging::getPage(start + i, true, Paging::Directory::CurrentDirectory)
+		    ->alloc(isSupervisorOnly(), !isReadOnly());
 		i += Paging::PageSize;
 	}
 	end = start + newSize;
@@ -73,7 +80,7 @@ siz Heap::contract(siz newSize) {
 	// our last page actually starts from an index before
 	siz i = oldSize - Paging::PageSize;
 	while(newSize < i) {
-		Paging::getPage(start + i, 0, Paging::Directory::KernelDirectory)
+		Paging::getPage(start + i, 0, Paging::Directory::CurrentDirectory)
 		    ->free();
 		i -= Paging::PageSize;
 	}
@@ -85,10 +92,8 @@ void *Heap::alloc(siz size, bool pageAlign) {
 	// take into account the size of header and footer
 	siz newSize = size + sizeof(Header) + sizeof(Footer);
 
-	siz iterator = findSmallestHole(newSize, pageAlign);
-
-	if(iterator ==
-	   (siz)-1) { // we didn't find a suitable hole, so we need to expand
+	auto iterator = findSmallestHole(newSize, pageAlign);
+	if(!iterator.has) { // we didn't find a suitable hole, so we need to expand
 		siz oldLength     = end - start;
 		siz oldEndAddress = end;
 
@@ -97,24 +102,26 @@ void *Heap::alloc(siz size, bool pageAlign) {
 		siz newLength = end - start;
 
 		// Find the endmost header. (Not endmost in size, but in location)
-		iterator = 0;
-		siz idx = (u32)-1, value = 0;
-		while(iterator < index.size) {
-			uptr tmp = (uptr)index.get(iterator);
+		siz  it      = 0;
+		bool has_one = false;
+		siz  idx = (u32)-1, value = 0;
+		while(it < index.size) {
+			uptr tmp = (uptr)index.get(it);
 			if(tmp > value) {
-				value = tmp;
-				idx   = iterator;
+				value   = tmp;
+				idx     = it;
+				has_one = true;
 			}
-			iterator++;
+			it++;
 		}
 
-		if(idx == (u32)-1) {
+		if(!has_one) {
 			// no headers are found at all, so we need to add a new one
 			Header *header = (Header *)oldEndAddress;
 			header->magic  = Header::Magic; // is hole
 			header->size   = newLength - oldLength;
 			Footer *footer =
-			    (Footer *)(oldEndAddress - header->size - sizeof(Footer));
+			    (Footer *)(oldEndAddress + header->size - sizeof(Footer));
 			footer->magic  = Footer::Magic;
 			footer->header = header;
 			index.insert(header);
@@ -200,9 +207,13 @@ void Heap::free(void *p) {
 	// in use
 	if((header->magic & ~((u32)1)) != Header::Magic) {
 		Terminal::err("Invalid header magic!");
+		for(;;)
+			;
 	}
 	if(footer->magic != Footer::Magic) {
 		Terminal::err("Invalid footer magic!");
+		for(;;)
+			;
 	}
 	header->magic = Header::Magic; // mark it as a hole
 	// we may or may not want to add this header to free holes index, depending
@@ -239,26 +250,27 @@ void Heap::free(void *p) {
 	}
 
 	// try for contraction of the heap if this is the end address
+	/*
 	if((uptr)footer + sizeof(Footer) == end) {
-		u32 oldLength = end - start;
-		u32 newLength = contract((uptr)header - start);
-		if(header->size > (oldLength - newLength)) {
-			// this header should still exist, adjust the size
-			header->size = oldLength - newLength;
-			footer = (Footer *)((uptr)header + header->size - sizeof(Footer));
-			footer->magic  = Footer::Magic;
-			footer->header = header;
-		} else {
-			// this header does not exist anymore after contraction,
-			// so remove it
-			u32 i = 0;
-			while(i < index.size && index.get(i) != header) i++;
-			if(i < index.size) {
-				addToIndex = false;
-				index.remove(i);
-			}
-		}
-	}
+	    u32 oldLength = end - start;
+	    u32 newLength = contract((uptr)header - start);
+	    if(header->size > (oldLength - newLength)) {
+	        // this header should still exist, adjust the size
+	        header->size = oldLength - newLength;
+	        footer = (Footer *)((uptr)header + header->size - sizeof(Footer));
+	        footer->magic  = Footer::Magic;
+	        footer->header = header;
+	    } else {
+	        // this header does not exist anymore after contraction,
+	        // so remove it
+	        u32 i = 0;
+	        while(i < index.size && index.get(i) != header) i++;
+	        if(i < index.size) {
+	            addToIndex = false;
+	            index.remove(i);
+	        }
+	    }
+	}*/
 
 	if(addToIndex)
 		index.insert(header);

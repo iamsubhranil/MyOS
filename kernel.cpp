@@ -7,6 +7,7 @@
 #include "memory.h"
 #include "multiboot.h"
 #include "paging.h"
+#include "scheduler.h"
 #include "syscall.h"
 #include "task.h"
 #include "terminal.h"
@@ -28,16 +29,48 @@ extern int hello() {
 	Terminal::write("syscall is working!\n");
 	return 0;
 }
+
+void writeSomething() {
+	u32 res = 1;
+	for(;;) {
+		Asm::cli();
+		res++;
+		if(res % 1000000 == 0)
+			Terminal::write("\nThread: ", (u32)Scheduler::CurrentTask->id,
+			                "\tresult: ", res);
+		Asm::sti();
+	}
+	// u32 id = 1;
+	// while(1) {
+	// u32 id = Scheduler::CurrentTask->id;
+	// Terminal::write("At task: ", id, " iteration:", iteration++, "\n");
+	// }
+	// Scheduler::unschedule();
+}
+
 #if defined(__cplusplus)
 extern "C" { /* Use C linkage for kernel_main. */
 #endif
 
+void addNewTask() {
+	for(u32 i = 0; i < 1; i++) {
+		Task *t   = Memory::create<Task>();
+		t->runner = writeSomething;
+		Scheduler::schedule(t);
+	}
+}
+
 // entry-point
-void kernelMain(Multiboot *mboot) {
+void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
+	(void)stack_;
+	(void)useless0;
+	(void)useless1;
+
+	// void kernelMain() {
 	Terminal::init();
 	mboot->dump();
 	// reinit paging
-	Paging::init();
+	Paging::init(mboot);
 	// disable interrupts before setting up gdt, idt and irqs
 	Asm::cli();
 	GDT::init();
@@ -45,7 +78,9 @@ void kernelMain(Multiboot *mboot) {
 	IRQ::init();
 	// we are all done, now enable interrupts
 	Asm::sti();
-	Timer::init();
+	Scheduler::init();
+	// writeSomething();
+	// Task::init();
 	// Syscall::init();
 	// Task::switchToUserMode(esp);
 	while(1) {
@@ -61,13 +96,19 @@ void kernelMain(Multiboot *mboot) {
 		u32 *c = (u32 *)Memory::alloc(sizeof(u32));
 		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
 		                 Terminal::Mode::HexOnce, (void *)c, "..");
-		Terminal::prompt(VGA::Color::Blue, "Kernel",
-		                 "Trying to page fault at 0xA0000000..");
-		u8 *x             = (u8 *)(0xA0000000);
-		u8  do_page_fault = *x;
-		Timer::wait(do_page_fault);
-		Terminal::prompt(VGA::Color::Blue, "Kernel", "Waited for 1 seconds!");
+		Memory::free(c);
+		Terminal::prompt(VGA::Color::Blue, "Kernel", "Releasing the u32..");
+		// Timer::wait(Timer::frequency);
+		// Terminal::prompt(VGA::Color::Blue, "Kernel", "Waited for 1 \
+		// seconds!");
+		break;
+		// while(1)
+		//	;
 	}
+	Terminal::write(Terminal::Mode::Dec);
+	addNewTask();
+	writeSomething();
+	// asm volatile("1: jmp 1b");
 }
 
 #if defined(__cplusplus)

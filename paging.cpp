@@ -106,20 +106,54 @@ void Paging::Page::free() {
 	present = 0;
 }
 
-void Paging::Frame::init() {
+void Paging::Frame::init(Multiboot *boot) {
+	// calculate total memory
+	u8   nummaps  = boot->mmap_length / sizeof(Multiboot::MemoryMap);
+	uptr mmap_ptr = (uptr)boot->mmap_addr;
+	for(u8 i = 0; i < nummaps; i++, mmap_ptr += sizeof(Multiboot::MemoryMap)) {
+		Multiboot::MemoryMap *m = (Multiboot::MemoryMap *)P2V(mmap_ptr);
+		if(m->type == Multiboot::MemoryMap::Type::Usable &&
+		   m->length >= (1024 * 1024))
+			Memory::Size += m->length;
+	}
+	Terminal::write("Total memory: ", Terminal::Mode::HexOnce, Memory::Size,
+	                "\n");
 	numberOfFrames = Memory::Size / PageSize;
 	// each frame occupies 1 bit of memory, so we need
 	// numberOfFrames / 8 bytes of memory
 	frames = (u32 *)Memory::alloc(numberOfFrames / 8);
-	memset(frames, 0, numberOfFrames / 8);
+	// by default, mark all frames as used
+	memset(frames, 0xFF, numberOfFrames / 8);
 	numberOfSets = numberOfFrames / (8 * sizeof(frames[0]));
+
+	// mark the low memory as unused for now, we will map all frames
+	// in this range later, as it contains various bootloader infos
+	for(siz i = 0; i < 1024 * 1024; i++) Frame::clear(i);
+
+	// check which frames are available for allocation,
+	// and set them as free
+	mmap_ptr = (uptr)boot->mmap_addr;
+	for(u8 i = 0; i < nummaps; i++, mmap_ptr += sizeof(Multiboot::MemoryMap)) {
+		Multiboot::MemoryMap *m = (Multiboot::MemoryMap *)P2V(mmap_ptr);
+		if(m->base_addr < 0x100000) {
+			continue;
+		}
+		if(m->type == Multiboot::MemoryMap::Type::Usable &&
+		   m->length >= (1024 * 1024)) {
+			// this block is usable and we have at least 1 MiB of free
+			// space, so we can use this
+			for(u64 j = m->base_addr, l = 0; l < m->length;
+			    l += Paging::PageSize) {
+				Frame::clear((j + l) & 0xFFFFFFFF);
+				// Terminal::write(l, "\n");
+			}
+		}
+	}
 }
 
 void Paging::switchPageDirectory(Paging::Directory *dir) {
-	// set up new directory
+	Asm::cr3_store((uptr)dir->physicalAddr);
 	Directory::CurrentDirectory = dir;
-	uptr tableloc               = (uptr)V2P(&dir->tablesPhysical);
-	asm volatile("mov %0, %%cr3" ::"r"(tableloc));
 }
 
 Paging::Page *Paging::getPage(uptr address, bool create,
@@ -139,9 +173,9 @@ Paging::Page *Paging::getPage(uptr address, bool create,
 		// Terminal::write(table_idx, " Page already exists!\n");
 		return &dir->tables[table_idx]->pages[pageno];
 	} else if(create) {
-		uptr tmp;
 		dir->tables[table_idx] =
-		    (Paging::Table *)Memory::alloc_a(sizeof(Paging::Table), tmp);
+		    (Paging::Table *)Memory::alloc_a(sizeof(Paging::Table));
+		uptr tmp = Paging::getPhysicalAddress((uptr)dir->tables[table_idx]);
 		// Terminal::write(
 		//   "Creating new table (sizeof(Table): ", sizeof(Paging::Table),
 		//   " sizeof(Page): ", sizeof(Paging::Page),
@@ -153,6 +187,53 @@ Paging::Page *Paging::getPage(uptr address, bool create,
 	} else {
 		return NULL;
 	}
+}
+
+Paging::Page *Paging::getFreePage(Paging::Directory *dir, uptr &address,
+                                  Option<uptr> physicalAddress) {
+	Page *p;
+	// first, check for a free page on already allocated tables
+	for(siz i = 0; i < Paging::TablesPerDirectory; i++) {
+		if(!dir->tables[i])
+			continue;
+		// check for a free page
+		Table *t = dir->tables[i];
+		for(siz j = 0; j < Paging::PagesPerTable; j++) {
+			if(t->pages[j].frame == 0) { // it is free, so allocate and return
+				                         // this. we actually need to alloc here
+				                         // to mark it as used.
+				p       = &t->pages[j];
+				address = ((i * Paging::PagesPerTable) + j) * Paging::PageSize;
+				break;
+			}
+		}
+	}
+	if(!p) {
+		// no allocated table contains a free page, so alloc a new table
+		for(siz i = 0; i < Paging::TablesPerDirectory; i++) {
+			if(!dir->tables[i]) {
+				// just call getPage(addr), that will automatically allocate
+				// a new table
+				address = ((i * Paging::PagesPerTable)) * Paging::PageSize;
+				p       = getPage(address, true, dir);
+				break;
+			}
+		}
+	}
+	if(!p)
+		return NULL;
+	if(!physicalAddress.has) {
+		p->alloc(false, true);
+	} else {
+		p->frame    = physicalAddress.value;
+		p->present  = 1;
+		p->rw       = 1;
+		p->user     = 1;
+		p->dirty    = 0;
+		p->accessed = 0;
+		Frame::set(physicalAddress.value);
+	}
+	return p;
 }
 
 void Paging::resetPage(uptr address, Paging::Directory *dir, bool soft) {
@@ -169,13 +250,22 @@ void Paging::resetPage(uptr address, Paging::Directory *dir, bool soft) {
 	}
 }
 
-Paging::Directory *Paging::Directory::clone() const {
-	uptr       phys;
-	Directory *dir = (Directory *)Memory::alloc_a(sizeof(Directory), phys);
+Paging::Directory *Paging::Directory::clone() {
+	Directory *dir = (Directory *)Memory::alloc_a(sizeof(Directory));
 	memset(dir, 0, sizeof(Directory));
 
-	uptr offset       = (uptr)&dir->tablesPhysical - (uptr)dir;
-	dir->physicalAddr = phys + offset;
+	dir->physicalAddr = Paging::getPhysicalAddress((uptr)&dir->tablesPhysical);
+	// get a free page on present directory to act as a
+	// temp page pointing to the dest frame.
+	// it already allocates the page.
+	uptr  pageCopyAddress = 0;
+	Page *pageCopyTemp    = getFreePage(this, pageCopyAddress);
+	if(!pageCopyTemp) {
+		Terminal::err("No free page on present table to create a copy!");
+		Stacktrace::print();
+		for(;;)
+			;
+	}
 
 	for(siz i = 0; i < Paging::TablesPerDirectory; i++) {
 		if(!tables[i])
@@ -189,23 +279,46 @@ Paging::Directory *Paging::Directory::clone() const {
 			dir->tablesPhysical[i] = tablesPhysical[i];
 		} else {
 			uptr phys;
-			dir->tables[i]         = tables[i]->clone(phys);
+			dir->tables[i] =
+			    tables[i]->clone(phys, i, pageCopyTemp, pageCopyAddress);
 			dir->tablesPhysical[i] = phys | 0x07; // Present, RW, User
 		}
 	}
 
+	// release the temporary page
+	Paging::resetPage(pageCopyAddress, this);
+	// the temporary page is also copied to the dest directory.
+	// who ever is pointing to that now, release it too
+	dir->tables[getTableIndex(pageCopyAddress)]
+	    ->pages[getPageNo(pageCopyAddress)]
+	    .free();
+
 	return dir;
 }
 
-Paging::Table *Paging::Table::clone(uptr &phys) const {
-	Table *table = (Table *)Memory::alloc_a(sizeof(Table), phys);
+Paging::Table *Paging::Table::clone(uptr &phys, siz table_idx,
+                                    Page *pageCopyTemp,
+                                    uptr  pageCopyAddress) const {
+	Table *table = (Table *)Memory::alloc_a(sizeof(Table));
 	memset(table, 0, sizeof(Table));
+	phys = Paging::getPhysicalAddress((uptr)table);
 
 	for(siz i = 0; i < Paging::PagesPerTable; i++) {
-		if(!pages[i].frame) // unallocated page, don't bother
+		if(!pages[i].frame) { // unallocated page, don't bother
 			continue;
-		// alloc a new frame
-		table->pages[i].alloc(false, false, 0);
+		}
+		// the temp page already contains an allocated frame,
+		// so just memcpy from source page to the temp page
+		memcpy((void *)(uptr)((table_idx * Paging::PagesPerTable + i) *
+		                      Paging::PageSize),
+		       (void *)(uptr)(pageCopyAddress), Paging::PageSize);
+
+		// copy the frame
+		table->pages[i].frame = pageCopyTemp->frame;
+		// reset the frame of the temporary page
+		pageCopyTemp->frame = 0;
+		// allocate a new frame for next iteration
+		pageCopyTemp->alloc(false, true);
 
 		// clone the flags
 		table->pages[i].present  = pages[i].present;
@@ -213,13 +326,6 @@ Paging::Table *Paging::Table::clone(uptr &phys) const {
 		table->pages[i].user     = pages[i].user;
 		table->pages[i].accessed = pages[i].accessed;
 		table->pages[i].dirty    = pages[i].dirty;
-
-		// finally, memcpy the data.
-		// we shouldn't really need to use assembly and/or
-		// disable paging here
-		memcpy((void *)(uptr)(table->pages[i].frame * Paging::PageSize),
-		       (void *)(uptr)(pages[i].frame * Paging::PageSize),
-		       Paging::PageSize);
 	}
 	return table;
 }
@@ -229,10 +335,10 @@ void Paging::Directory::dump() const {
 		if(tables[i]) {
 			siz j = 0;
 			while(1) {
-				while(j < PagesPerTable && tables[i]->pages[j].present == 0)
-					j++;
+				while(j < PagesPerTable && tables[i]->pages[j].frame == 0) j++;
 				if(j == PagesPerTable)
 					break;
+				Terminal::write("First present page: ", j, "\n");
 				siz rangeStart = j;
 				while(j < PagesPerTable && tables[i]->pages[j].present) j++;
 				siz rangeEnd = j;
@@ -284,16 +390,29 @@ void Paging::handlePageFault(Register *regs) {
 	}
 	Terminal::write(") at ", Terminal::Mode::Hex, faulting_address,
 	                Terminal::Mode::Reset, "\n");
-	Stacktrace::print();
+	// Stacktrace::print();
 	for(;;)
 		;
 }
 
-void Paging::init() {
-	Terminal::info("Setting up paging..");
+uptr Paging::getPhysicalAddress(uptr virtualAddress, Paging::Directory *dir) {
+	if(!dir)
+		return V2P(virtualAddress);
+	return dir->getPhysicalAddress(virtualAddress);
+}
+
+uptr Paging::Directory::getPhysicalAddress(uptr virtualAddress) const {
+	siz  tbl           = getTableIndex(virtualAddress);
+	siz  page          = getPageNo(virtualAddress);
+	uptr physicalStart = tables[tbl]->pages[page].frame * Paging::PageSize;
+	physicalStart += (virtualAddress) & (Paging::PageSize - 1);
+	return physicalStart;
+}
+
+void Paging::init(Multiboot *boot) {
 	PROMPT_INIT("Paging", Brown);
-	PROMPT("Setting up frames..");
-	Frame::init();
+	PROMPT("Setting up paging..");
+	Frame::init(boot);
 
 	PROMPT("Setting up page fault handler..");
 	ISR::installHandler(14, handlePageFault);
@@ -304,7 +423,7 @@ void Paging::init() {
 	memset(Directory::KernelDirectory, 0, sizeof(Directory));
 
 	Directory::KernelDirectory->physicalAddr =
-	    V2P((uptr)&Directory::KernelDirectory->tablesPhysical);
+	    getPhysicalAddress((uptr)&Directory::KernelDirectory->tablesPhysical);
 
 	PROMPT("Allocating kernel heap..");
 	Heap *heap = (Heap *)Memory::alloc_a(sizeof(Heap));
@@ -325,17 +444,21 @@ void Paging::init() {
 	// is mapped.
 	uptr lastFrame = 0;
 
-	PROMPT("Allocating frames for kernel memory and heap..");
+	// PROMPT("Allocating frames for kernel memory and heap..");
 	for(i = KMEM_BASE; i < Memory::placementAddress; i += Paging::PageSize) {
 		lastFrame = getPage(i, true, Directory::KernelDirectory)
-		                ->alloc(true, false, lastFrame);
+		                ->alloc(true, true, lastFrame);
+		// Terminal::write("lastframe: ", Terminal::Mode::HexOnce, lastFrame,
+		//                "\n");
 	}
 	for(i = Heap::Start; i < Heap::Start + Heap::InitialSize;
 	    i += Paging::PageSize) {
 		lastFrame = getPage(i, false, Directory::KernelDirectory)
-		                ->alloc(true, false, lastFrame);
+		                ->alloc(true, true, lastFrame);
 	}
 
+	PROMPT("Dumping kernel directory: ");
+	Directory::KernelDirectory->dump();
 	PROMPT("Switching page directory..");
 	switchPageDirectory(Directory::KernelDirectory);
 
@@ -343,11 +466,6 @@ void Paging::init() {
 	Memory::kernelHeap = heap;
 	Memory::kernelHeap->init(Heap::Start, Heap::Start + Heap::InitialSize,
 	                         Heap::Start + Heap::InitialSize, false, false);
-
-	PROMPT("Dumping kernel directory: ");
-	Directory::KernelDirectory->dump();
-	PROMPT("Cloning kernel directory..");
-	Directory::CurrentDirectory = Directory::KernelDirectory->clone();
 
 	Terminal::done("Paging setup complete!");
 }

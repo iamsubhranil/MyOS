@@ -82,6 +82,20 @@ void IRQ::init() {
 	Terminal::done("IRQs set up successfully!");
 }
 
+void IRQ::finishIrq(Register *r) {
+
+	/* If the IDT entry that was invoked was greater than 40
+	 *  (meaning IRQ8 - 15), then we need to send an EOI to
+	 *  the slave controller */
+	if(r->int_no >= 40) {
+		IO::outb(0xA0, 0x20);
+	}
+
+	/* In either case, we need to send an EOI to the master
+	 *  interrupt controller too */
+	IO::outb(0x20, 0x20);
+}
+
 extern "C" {
 /*  Each of the IRQ ISRs point to this function, rather than
  *  the 'fault_handler' in 'isr.cpp'. The IRQ Controllers need
@@ -100,17 +114,7 @@ void _irq_handler(Register *r) {
 	if(handler) {
 		handler(r);
 	}
-
-	/* If the IDT entry that was invoked was greater than 40
-	 *  (meaning IRQ8 - 15), then we need to send an EOI to
-	 *  the slave controller */
-	if(r->int_no >= 40) {
-		IO::outb(0xA0, 0x20);
-	}
-
-	/* In either case, we need to send an EOI to the master
-	 *  interrupt controller too */
-	IO::outb(0x20, 0x20);
+	IRQ::finishIrq(r);
 }
 
 void _irq0_test() {

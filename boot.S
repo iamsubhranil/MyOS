@@ -126,6 +126,9 @@ _start:
     // Set up the stack.
     movl $stack_top, %esp
 
+    push $0
+    push $0
+    push $stack_top
     // push multiboot headers
     addl $KMEM_BASE, %ebx // make it a virtual address
     push %ebx   // multiboot header pointer
@@ -455,7 +458,7 @@ isr_common_stub:
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
-    mov %esp, %eax   /* Push us the stack */
+    mov %esp, %eax
     push %eax
     //mov _fault_handler, %eax
     //call *%eax       /* A special call, preserves the 'eip' register */
@@ -472,12 +475,14 @@ isr_common_stub:
 
 /* IRQs */
 
+/*
 .global _irq0
 _irq0:
 	cli
 	push $0
 	push $32
 	jmp irq_common_stub
+*/
 
 .global _irq1
 _irq1:
@@ -599,9 +604,10 @@ irq_common_stub:
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
-    mov %esp, %eax
+    mov %esp, %eax // our register struct starts from here
     push %eax
     //mov _irq_handler, %eax
+    //call *%eax
     call _irq_handler
     pop %eax
     pop %gs
@@ -609,9 +615,74 @@ irq_common_stub:
     pop %es
     pop %ds
     popa
-    add $0x8, %esp
-    sti             /* enable interrupts now */
+    add $0x8, %esp // cleanup error code and irq number
     iret
+
+.global esp_bak
+esp_bak:
+.skip 4
+.global eip_bak
+eip_bak:
+.skip 4
+
+.global _irq0
+_irq0:
+    cli
+	push $0
+	push $32
+    push %ds
+    push %es
+    push %fs
+    push %gs
+    pusha
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
+    mov %esp, %eax // our register struct starts from here
+    push %eax
+    call scheduler_scheduleNext // change pointers and whatnot
+    mov %eax, %esp // restore the old stack pointer
+    sub $32, %esp // pusha pushed the sp before the instruction, so point to the last pushed item
+    popa
+    // pop segment registers
+    pop %gs
+    pop %fs
+    pop %es
+    pop %ds
+    add $0x8, %esp // pop error code and irq number
+    pop eip_bak   // store eip in backup
+    add $0x4, %esp // pop %cs, ignore cs for now
+    popf // pop the flags
+    mov $0x20, %al // finish the irq
+    out %al, $0x20
+    jmp *eip_bak // jump to the ip
+
+
+.global eip_load
+eip_load:
+    mov (%esp), %eax
+    ret
+
+.global performTaskSwitch
+performTaskSwitch:
+    cli                 // disable interrupts
+    mov 4(%esp), %ebx   // ebx
+    mov 8(%esp), %edi   // edi
+    mov 12(%esp), %esi  // esi
+    mov 16(%esp), %ebp  // ebp
+    mov 20(%esp), %ecx  // save it to a register for now
+    mov 24(%esp), %eax  // physical address of page directory
+    mov %cr3, %edx
+    cmp %eax, %edx      // if our page dir is same, skip the costly swap
+    je doSwitch
+    mov %eax, %cr3      // set the page directory
+doSwitch:
+    mov 28(%esp), %eax  // eip
+    mov %ecx, %esp      // set the esp
+    sti                 // enable interrupts
+    jmp *%eax           // jump to the eip
 
 /*
 Set the size of the _start symbol to the current location '.' minus its start.

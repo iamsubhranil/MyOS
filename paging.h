@@ -1,6 +1,8 @@
 #pragma once
 
+#include "multiboot.h"
 #include "myos.h"
+#include "option.h"
 #include "system.h"
 
 struct Paging {
@@ -36,7 +38,7 @@ struct Paging {
 			        31); // each bit value holds 32 bits, so we get the offset
 		}
 
-		static void init();
+		static void init(Multiboot *boot);
 
 		static void set(uptr addr);
 		static void clear(uptr addr);
@@ -71,7 +73,18 @@ struct Paging {
 	struct Table {
 		Page pages[PagesPerTable];
 
-		Table *clone(uptr &phys) const;
+		// we need to know the idx of the table to calculate
+		// the virtual address of the source page and do
+		// the memcpy.
+		// pageCopyTemp contains the address of a page on
+		// source directory, using which a new frame is
+		// allocated. the source page is copied on the new
+		// frame, and then the dest page just points to the
+		// new frame, resetting frame of the temp page.
+		// tempAddr contains the address where the temp
+		// page points to.
+		Table *clone(uptr &phys, siz table_idx, Page *pageCopyTemp,
+		             uptr tempAddr) const;
 	};
 
 	struct Directory {
@@ -91,9 +104,10 @@ struct Paging {
 		static Directory *CurrentDirectory;
 		static Directory *KernelDirectory;
 
-		Directory *clone() const;
+		Directory *clone();
 
 		void dump() const;
+		uptr getPhysicalAddress(uptr virtualAddress) const;
 	};
 
 	static constexpr siz getTableIndex(uptr address) {
@@ -102,9 +116,17 @@ struct Paging {
 	static constexpr siz getPageNo(uptr address) {
 		return (address / PageSize) & (PagesPerTable - 1);
 	}
-	static void  init();
+	static void  init(Multiboot *boot);
 	static void  switchPageDirectory(Directory *newDirectory);
 	static Page *getPage(uptr address, bool createIfAbsent, Directory *dir);
+	// get a free page from the given directory. the address to which
+	// the page points will be set on 'address'.
+	// if physicalAddress is specified, the allocated page will point
+	// to the given physicalAddress. It doesn't however check whether
+	// the frame is empty or not. So be careful while releasing such
+	// a frame
+	static Page *getFreePage(Directory *dir, uptr &virtualAddress,
+	                         Option<uptr> physicalAddress = {});
 	// unmaps the page within which the address
 	// resides, also invalidates the page in tlb.
 	// if the table for the page does not exist, it does nothing.
@@ -113,4 +135,8 @@ struct Paging {
 	static void resetPage(uptr address, Directory *dir, bool soft = false);
 
 	static void handlePageFault(Register *r);
+
+	static uptr
+	    getPhysicalAddress(uptr       virtualAddress,
+	                       Directory *dir = Directory::CurrentDirectory);
 };

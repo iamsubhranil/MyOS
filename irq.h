@@ -12,4 +12,6 @@ struct IRQ {
 	static void uninstallHandler(u8 num);
 	static void remap();
 	static void init();
+	// let the controller know we acknowledged it
+	static void finishIrq(Register *r);
 };

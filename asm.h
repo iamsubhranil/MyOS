@@ -40,4 +40,17 @@ struct Asm {
 	static inline void invlpg(uptr address) {
 		asm volatile("invlpg (%0)" ::"r"(address) : "memory");
 	}
+
+	static inline void cr3_store(uptr address) {
+		asm volatile("mov %0, %%cr3" ::"r"(address));
+	}
+
+	struct DisableInterrupt {
+		DisableInterrupt() {
+			Asm::cli();
+		}
+		~DisableInterrupt() {
+			Asm::sti();
+		}
+	};
 };

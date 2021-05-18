@@ -1,6 +1,7 @@
 #pragma once
 
 #include "myos.h"
+#include "option.h"
 #include "ordered_array.h"
 
 struct Heap {
@@ -65,7 +66,7 @@ struct Heap {
 	void *alloc(siz size, bool pageAlign);
 	void  free(void *p);
 
-	siz  findSmallestHole(siz size, bool pageAlign);
-	void expand(siz newSize);
-	siz  contract(siz newSize);
+	Option<siz> findSmallestHole(siz size, bool pageAlign);
+	void        expand(siz newSize);
+	siz         contract(siz newSize);
 };

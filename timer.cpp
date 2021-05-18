@@ -1,6 +1,7 @@
 #include "timer.h"
 #include "io.h"
 #include "irq.h"
+#include "scheduler.h"
 #include "terminal.h"
 
 volatile u32 Timer::ticks     = 0;
@@ -25,6 +26,8 @@ void Timer::handler(Register *r) {
 	(void)r;
 	/* Increment our 'tick count' */
 	ticks++;
+	// switch task
+	Scheduler::scheduleNext(r);
 	// Terminal::prompt(VGA::Color::Blue, "Timer", "Tick..");
 
 	/* Every 'frequency' clocks (approximately 1 second), we will

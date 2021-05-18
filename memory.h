@@ -5,14 +5,19 @@
 struct Heap;
 struct Memory {
 
-	static constexpr siz Size = 0x1000000; // 16MiB for now
-	static Heap *        kernelHeap;
-	static uptr          placementAddress;
-	static void *        alloc(siz size);
-	static void *alloc(siz size, uptr &phys); // returns physical address
+	static siz Size; // set by Paging::Frame::init by reading the multiboot map
+	static Heap *kernelHeap;
+	static uptr  placementAddress;
+	// to get the physical address, use Paging::getPhysicalAddress
+	static void *alloc(siz size);
 	// aligned alloc
 	static void *alloc_a(siz size);
-	static void *alloc_a(siz size, uptr &phys); // returns physical address
 
 	static void free(void *addr); // only works when heap is active
+
+	template <typename T, typename... F> static T *create(F... args) {
+		T *val = (T *)alloc(sizeof(T));
+		(*val) = T(args...);
+		return val;
+	}
 };
