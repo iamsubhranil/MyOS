@@ -390,7 +390,7 @@ void Paging::handlePageFault(Register *regs) {
 	}
 	Terminal::write(") at ", Terminal::Mode::Hex, faulting_address,
 	                Terminal::Mode::Reset, "\n");
-	// Stacktrace::print();
+	Stacktrace::print();
 	for(;;)
 		;
 }
@@ -425,16 +425,9 @@ void Paging::init(Multiboot *boot) {
 	Directory::KernelDirectory->physicalAddr =
 	    getPhysicalAddress((uptr)&Directory::KernelDirectory->tablesPhysical);
 
-	PROMPT("Allocating kernel heap..");
-	Heap *heap = (Heap *)Memory::alloc_a(sizeof(Heap));
-
-	PROMPT("Allocating pages for kernel heap..");
-	uptr i = 0;
-	for(i = Heap::Start; i < Heap::Start + Heap::InitialSize;
-	    i += Paging::PageSize) {
+	for(uptr i = Heap::KHeapStart; i < Heap::KHeapEnd; i += Paging::PageSize) {
 		getPage(i, true, Directory::KernelDirectory);
 	}
-
 	// We need to create a mapping between our placement address,
 	// which is 0xc0000000 as specified in the linker script,
 	// with our physical address, which starts from 0.
@@ -445,17 +438,17 @@ void Paging::init(Multiboot *boot) {
 	uptr lastFrame = 0;
 
 	// PROMPT("Allocating frames for kernel memory and heap..");
-	for(i = KMEM_BASE; i < Memory::placementAddress; i += Paging::PageSize) {
+	for(uptr i = KMEM_BASE; i < Memory::placementAddress;
+	    i += Paging::PageSize) {
 		lastFrame = getPage(i, true, Directory::KernelDirectory)
 		                ->alloc(true, true, lastFrame);
 		// Terminal::write("lastframe: ", Terminal::Mode::HexOnce, lastFrame,
 		//                "\n");
 	}
-	for(i = Heap::Start; i < Heap::Start + Heap::InitialSize;
-	    i += Paging::PageSize) {
-		lastFrame = getPage(i, false, Directory::KernelDirectory)
-		                ->alloc(true, true, lastFrame);
-	}
+	// map the first page
+	getPage(Heap::KHeapStart, true, Directory::KernelDirectory)
+	    ->alloc(true, true, lastFrame);
+	// we don't need to map heap
 
 	PROMPT("Dumping kernel directory: ");
 	Directory::KernelDirectory->dump();
@@ -463,9 +456,9 @@ void Paging::init(Multiboot *boot) {
 	switchPageDirectory(Directory::KernelDirectory);
 
 	PROMPT("Initalizing kernel heap..");
+	Heap *heap = (Heap *)(uptr)(Heap::KHeapStart);
+	heap->init(Heap::KHeapEnd - Heap::KHeapStart);
 	Memory::kernelHeap = heap;
-	Memory::kernelHeap->init(Heap::Start, Heap::Start + Heap::InitialSize,
-	                         Heap::Start + Heap::InitialSize, false, false);
 
 	Terminal::done("Paging setup complete!");
 }

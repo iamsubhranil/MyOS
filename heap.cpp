@@ -1,277 +1,445 @@
 #include "heap.h"
-#include "option.h"
 #include "paging.h"
-#include "stacktrace.h"
+#include "string.h"
 #include "terminal.h"
 
-Option<siz> Heap::findSmallestHole(siz size, bool pageAlign) {
-	siz i = 0;
-	while(i < index.size) {
-		Header *header = index.get(i);
-		if(header->size >= size) {
-			if(pageAlign) {
-				uptr location = (uptr)header;
-				uptr offset   = 0;
-				if(!Paging::isAligned(location + sizeof(Header))) {
-					offset = Paging::PageSize - ((location + sizeof(Header)) &
-					                             (Paging::PageSize - 1));
-				}
-				if(header->size >= offset + size)
-					break;
-			} else
-				break;
+void Heap::init(siz size) {
+	// size must be pagealigned
+	Paging::alignIfNeeded(size);
+	heapStart = (uptr)this;
+	heapEnd   = heapStart + size;
+	// after us, the first we'll do is make space for
+	// all the buckets that we may create in the future.
+	buckets = (Bucket *)(heapStart + sizeof(Heap));
+
+	// we'll use the first page for ourselves, and leave
+	// the rest of the place for everything else.
+	uptr usable = size - Paging::PageSize;
+	// now find the number of buckets we can fit
+	maxBucketMemory     = usable / BucketRatio;
+	numBuckets          = maxBucketMemory / BucketSize;
+	bucketAdditionalMem = numBuckets * sizeof(Bucket);
+	// is the total overhead required more than our allocated
+	// 4KiB?
+	if(bucketAdditionalMem + sizeof(Heap) > Paging::PageSize) {
+		// try to find an optimal range where we will have
+		// enough place to place the buckets themselves
+		while(bucketAdditionalMem + sizeof(Heap) + usable > size) {
+			// reduce the usable memory by a page
+			usable -= Paging::PageSize;
+			maxBucketMemory     = usable / BucketRatio;
+			numBuckets          = maxBucketMemory / BucketSize;
+			bucketAdditionalMem = numBuckets * sizeof(Bucket);
 		}
-		i++;
 	}
-	if(i == index.size) {
-		return {};
+	// make sure all the pages needed by us to manage the heap
+	// are allocated
+	for(uptr i = (uptr)heapStart; i < (uptr)buckets + bucketAdditionalMem;
+	    i += Paging::PageSize) {
+		Paging::getPage(i, true, Paging::Directory::CurrentDirectory)
+		    ->alloc(true, true);
 	}
-	return i;
-}
-
-void Heap::init(uptr s, uptr e, siz m, bool supervisorOnly, bool readOnly) {
-	index = OrderedArray<Header *>((void *)s, IndexSize, Header::lessThan);
-	start = s;
-	// move forward to the first available location,
-	// rest are already occupied by the index.
-	start += IndexSize;
-
+	// we'll use 'usable' amount of memory from the end of this heap,
+	// so calculate that first.
+	uptr start = (uptr)(heapEnd - usable);
+	// page align the starting address
 	Paging::alignIfNeeded(start);
+	bucketAllocationCurrent = bucketAllocationStart = start;
+	bucketAllocationEnd  = bucketAllocationStart + maxBucketMemory - 1;
+	largeAllocationStart = bucketAllocationEnd + 1;
+	largeAllocationEnd   = heapEnd;
 
-	end        = e;
-	max        = m;
-	properties = 0;
-	properties |= supervisorOnly;
-	properties |= (readOnly << 1);
+	for(siz i = 0; i < BlockCount; i++) bucketClassList[i] = NULL;
 
-	Header *hole = (Header *)start;
-	hole->size   = end - start;
-	hole->magic  = Header::Magic; // set is hole to true
-	Footer *f    = (Footer *)(end - sizeof(Footer));
-	f->magic     = Footer::Magic;
-	f->header    = hole;
-	index.insert(hole);
+	freeBuckets = NULL;
+
+	// initialize the large header
+	headerRoot = (Header *)largeAllocationStart;
+	headerRoot->ensureMapped();
+	headerRoot->allocationSize = (largeAllocationEnd - largeAllocationStart);
+	headerRoot->left           = NULL;
+	headerRoot->right          = NULL;
+	headerRoot->previousHeader = NULL;
+	headerRoot->magic          = Header::Magic;
 }
 
-void Heap::expand(siz newSize) {
-	Paging::alignIfNeeded(newSize);
-
-	siz oldSize = end - start;
-	if(oldSize >= Heap::MaxHeapSize)
-		return;
-	siz i = oldSize;
-	while(i < newSize) {
-		Paging::getPage(start + i, true, Paging::Directory::CurrentDirectory)
-		    ->alloc(isSupervisorOnly(), !isReadOnly());
-		i += Paging::PageSize;
-	}
-	end = start + newSize;
-}
-
-siz Heap::contract(siz newSize) {
-	Paging::alignIfNeeded(newSize);
-
-	if(newSize < Heap::MinHeapSize)
-		newSize = Heap::MinHeapSize;
-
-	siz oldSize = end - start;
-	if(oldSize == newSize)
-		return oldSize;
-	// our last page actually starts from an index before
-	siz i = oldSize - Paging::PageSize;
-	while(newSize < i) {
-		Paging::getPage(start + i, 0, Paging::Directory::CurrentDirectory)
-		    ->free();
-		i -= Paging::PageSize;
-	}
-	end = start + newSize;
-	return newSize;
-}
-
-void *Heap::alloc(siz size, bool pageAlign) {
-	// take into account the size of header and footer
-	siz newSize = size + sizeof(Header) + sizeof(Footer);
-
-	auto iterator = findSmallestHole(newSize, pageAlign);
-	if(!iterator.has) { // we didn't find a suitable hole, so we need to expand
-		siz oldLength     = end - start;
-		siz oldEndAddress = end;
-
-		expand(oldLength + newSize);
-
-		siz newLength = end - start;
-
-		// Find the endmost header. (Not endmost in size, but in location)
-		siz  it      = 0;
-		bool has_one = false;
-		siz  idx = (u32)-1, value = 0;
-		while(it < index.size) {
-			uptr tmp = (uptr)index.get(it);
-			if(tmp > value) {
-				value   = tmp;
-				idx     = it;
-				has_one = true;
+void *Heap::alloc(siz bytes) {
+	if(bytes <= BlockEnd) {
+		// we can do bucket allocation
+		bytes = blockNearest(bytes);
+		siz c = getSizeClass(bytes);
+		if(bucketClassList[c]) {
+			Bucket *b = bucketClassList[c];
+			void *  m = b->allocateBlock();
+			if(m)
+				return m;
+			// try to find a bucket which can allocate this block
+			for(Bucket *buk = b->nextBucket; buk != NULL;
+			    b = buk, buk = buk->nextBucket) {
+				void *m = buk->allocateBlock();
+				if(m) {
+					// this bucket did find something to allocate
+					// put this bucket to the front of the class list
+					b->nextBucket      = buk->nextBucket;
+					buk->nextBucket    = bucketClassList[c];
+					bucketClassList[c] = buk;
+					return m;
+				}
 			}
-			it++;
 		}
-
-		if(!has_one) {
-			// no headers are found at all, so we need to add a new one
-			Header *header = (Header *)oldEndAddress;
-			header->magic  = Header::Magic; // is hole
-			header->size   = newLength - oldLength;
-			Footer *footer =
-			    (Footer *)(oldEndAddress + header->size - sizeof(Footer));
-			footer->magic  = Footer::Magic;
-			footer->header = header;
-			index.insert(header);
-		} else {
-			// adjust the last header
-			Header *header = index.get(idx);
-			header->size   = (newLength - oldLength);
-
-			Footer *footer =
-			    (Footer *)((uptr)header + header->size - sizeof(Footer));
-			footer->header = header;
-			footer->magic  = Footer::Magic;
-		}
-		// now recurse and allocate
-		return alloc(size, pageAlign);
-	}
-
-	Header *origHoleHeader = index.get(iterator);
-	uptr    origHolePos    = (uptr)origHoleHeader;
-	siz     origHoleSize   = origHoleHeader->size;
-
-	// Here we work out if we should split the hole we found into two parts.
-	// Is the original hole size - requested hole size less than the overhead
-	// for adding a new hole?
-	if(origHoleSize - newSize < sizeof(Header) + sizeof(Footer)) {
-		size += origHoleSize - newSize;
-		newSize = origHoleSize;
-	}
-
-	if(pageAlign && !Paging::isAligned(origHolePos + sizeof(Header))) {
-		uptr newLocation = origHolePos + Paging::PageSize -
-		                   (origHolePos & (Paging::PageSize - 1)) -
-		                   sizeof(Header);
-		Header *holeHeader = (Header *)origHolePos;
-		holeHeader->size   = Paging::PageSize -
-		                   (origHolePos & (Paging::PageSize - 1)) -
-		                   sizeof(Header);
-		holeHeader->magic = Header::Magic; // mark it as a hole
-		Footer *footer    = (Footer *)(newLocation - sizeof(Footer));
-		footer->magic     = Footer::Magic;
-		footer->header    = holeHeader;
-		origHolePos       = newLocation;
-		origHoleSize      = origHoleSize - holeHeader->size;
+		// try to allocate a new bucket
+		Bucket *b = allocBucket(bytes, c);
+		if(!b)
+			return NULL;
+		return b->allocateBlock();
 	} else {
-		index.remove(iterator);
-	}
-
-	Header *header = (Header *)origHolePos;
-	header->magic  = Header::Magic | 1; // mark as used
-	header->size   = newSize;
-	Footer *footer = (Footer *)(origHolePos + sizeof(Header) + size);
-	footer->magic  = Footer::Magic;
-	footer->header = header;
-
-	if(origHoleSize > newSize) {
-		Header *header =
-		    (Header *)(origHolePos + sizeof(Header) + size + sizeof(Footer));
-		header->magic = Header::Magic; // mark as a hole
-		header->size  = origHoleSize - newSize;
-
-		Footer *footer =
-		    (Footer *)((uptr)header + origHoleSize - newSize - sizeof(Footer));
-
-		if((uptr)footer < end) {
-			footer->magic  = Footer::Magic;
-			footer->header = header;
+		// round up to the next multiple of 8 to make sure
+		// our allocation stays aligned
+		bytes = roundUp8(bytes);
+		// use huge allocators
+		Header *h = findClosestHeader(bytes);
+		h->magic  = Header::Magic | 1;
+		// remove it from the tree
+		removeHeader(h);
+		// check if we can break it
+		// we'll only break a header if it contains enough space to allocate
+		// a new huge object, i.e. of size BlockEnd + 1
+		if(h->allocationSize > bytes + sizeof(Header) + BlockEnd) {
+			Header *nh = (Header *)((uptr)h + sizeof(Header) + bytes);
+			nh->ensureMapped();
+			nh->magic          = Header::Magic;
+			nh->left           = NULL;
+			nh->right          = NULL;
+			nh->previousHeader = h;
+			nh->allocationSize = h->allocationSize - bytes - sizeof(Header);
+			// insert the new header
+			insertHeader(nh);
+			// adjust the old header
+			h->allocationSize = bytes + sizeof(Header);
 		}
-
-		index.insert(header);
+		h->ensureMapped(true);
+		return (void *)((uptr)h + sizeof(Header));
 	}
-
-	return (void *)((uptr)header + sizeof(Header));
 }
 
-void Heap::free(void *p) {
-	if(!p)
+void *Heap::alloc_a(siz bytes) {
+	if(bytes <= BlockEnd) {
+		bytes   = blockNearest(bytes);
+		siz cls = getSizeClass(bytes);
+		// to alloc a page aligned byte within a bucket,
+		// it must be the first allocation of a bucket,
+		// buckets themselves are page aligned. so, find
+		// a free bucket.
+		Bucket *b = allocBucket(bytes, cls);
+		if(!b) {
+			Terminal::write("No free bucket found to allocate aligned!");
+			for(;;)
+				;
+		}
+		return b->allocateBlock();
+	} else {
+		bytes = roundUp8(bytes);
+		// try to find a free header
+		Header *header = findClosestHeader(bytes, true);
+		// remove ourselves from the tree first
+		removeHeader(header);
+		// mark it used
+		header->magic |= 1;
+		if(!header) {
+			Terminal::write("No free header found to allocate aligned!");
+			for(;;)
+				;
+		}
+		uptr addrStart = (uptr)header + sizeof(Header);
+		// make the address aligned
+		Paging::alignIfNeeded(addrStart);
+		if(addrStart - sizeof(Header) == (uptr)header) {
+			// we are luckily in the perfect position to make
+			// the returned memory page aligned, so we don't
+			// need to do anything except for following
+			// the routine procedure.
+		} else {
+			// we'll start from addrStart - sizeof(Header).
+			uptr newStart = addrStart - sizeof(Header);
+			// populate the new header
+			Header *newHeader = (Header *)newStart;
+			newHeader->ensureMapped();
+			newHeader->magic = Header::Magic | 1;
+			newHeader->left = newHeader->right = NULL;
+			// this is the additional amount of memory that
+			// we will release
+			uptr additionalSize = newStart - (uptr)header;
+			// so, this will be our new size
+			newHeader->allocationSize = header->allocationSize - additionalSize;
+			// try to adjust our previous header
+			Header *prev              = header->previousHeader;
+			newHeader->previousHeader = prev;
+			// if we don't even have a previous header, we need
+			// to create a new one, providing we have enough
+			// space to create a new header. otherwise, we'll
+			// just keep the beginning of the allocation block
+			// empty, free will adjust us back.
+			if(!prev) {
+				if(additionalSize > sizeof(Header) + BlockEnd) {
+					Header *add = header; // this is our new fragmented header
+					add->allocationSize = additionalSize;
+					add->previousHeader = NULL;
+					add->left = add->right    = NULL;
+					add->magic                = Header::Magic;
+					newHeader->previousHeader = add;
+					insertHeader(add);
+				} else {
+					// we don't have enough size in front of us
+					// to perform a huge allocation. so keep the space empty
+				}
+			} else {
+				// we have a previous header, remove that from the tree
+				// if it was free
+				if(prev->magic == Header::Magic)
+					removeHeader(prev);
+				// adjust its size
+				prev->allocationSize += additionalSize;
+				// insert that back
+				if(prev->magic == Header::Magic)
+					insertHeader(prev);
+			}
+			header = newHeader;
+		}
+		// finally, check if we have anough space to break us up
+		// we'll only break a header if it contains enough space to allocate
+		// a new huge object, i.e. of size BlockEnd + 1
+		if(header->allocationSize > bytes + sizeof(Header) + BlockEnd) {
+			Header *nh = (Header *)((uptr)header + sizeof(Header) + bytes);
+			nh->ensureMapped();
+			nh->magic          = Header::Magic;
+			nh->left           = NULL;
+			nh->right          = NULL;
+			nh->previousHeader = header;
+			nh->allocationSize =
+			    header->allocationSize - bytes - sizeof(Header);
+			// insert the new header
+			insertHeader(nh);
+			// adjust the old header
+			header->allocationSize = bytes + sizeof(Header);
+		}
+		header->ensureMapped(true);
+		return (void *)((uptr)header + sizeof(Header));
+	}
+}
+
+void Heap::free(void *mem) {
+	if(!mem)
 		return;
-
-	Header *header = (Header *)((uptr)p - sizeof(Header));
-	Footer *footer = (Footer *)((uptr)header + header->size - sizeof(Footer));
-
-	// last bit marks if it is a hole, so that should be set to 1 since it was
-	// in use
-	if((header->magic & ~((u32)1)) != Header::Magic) {
-		Terminal::err("Invalid header magic!");
-		for(;;)
-			;
+	uptr addr = (uptr)mem;
+	if(addr < bucketAllocationEnd) {
+		// this is allocated by a bucket, so find it
+		siz     idx = getBucketIndex(addr);
+		Bucket *b   = &buckets[idx];
+		b->releaseBlock(mem);
+		siz cls = getSizeClass(b->blockSize);
+		if(b->numAvailBlocks == BucketSize / b->blockSize) {
+			// add this bucket to the free list
+			Bucket *parent = NULL;
+			Bucket *c      = NULL;
+			for(c = bucketClassList[cls]; c != b; parent = c, c = c->nextBucket)
+				;
+			if(parent)
+				parent->nextBucket = b->nextBucket;
+			else
+				bucketClassList[cls] = b->nextBucket;
+			b->nextBucket = freeBuckets;
+			freeBuckets   = b;
+			// release the page back to the os
+			// we can only do this because we know
+			// startMem is page aligned and has size
+			// equal to the page size
+			Paging::getPage((uptr)b->startMem, false,
+			                Paging::Directory::CurrentDirectory)
+			    ->free();
+		}
+		// otherwise, we may also want to add this bucket to the front
+		// of its size class, but that may generate unnecessary additional
+		// overhead. we'll see.
+	} else {
+		// find the header
+		Header *h = (Header *)((uptr)mem - sizeof(Header));
+		if(h->magic != (Header::Magic | 1)) {
+			Terminal::err("Invalid header magic!");
+			for(;;)
+				;
+		}
+		// mark us as free
+		h->magic = Header::Magic;
+		// check if next header is free, iff we're not the last header
+		Header *nh = (Header *)((uptr)h + h->allocationSize);
+		if((uptr)nh != largeAllocationEnd && nh->magic == Header::Magic) {
+			// merge with next header, and remove next
+			Header *nnh = (Header *)((uptr)nh + nh->allocationSize);
+			if((uptr)nnh != largeAllocationEnd)
+				nnh->previousHeader = h;
+			// remove next header
+			removeHeader(nh);
+			// add its allocation size to ours
+			h->allocationSize += nh->allocationSize;
+		}
+		// check if its previous header is free, iff there is one
+		if(h->previousHeader && h->previousHeader->magic == Header::Magic) {
+			// remove previous header
+			removeHeader(h->previousHeader);
+			// merge with previous header
+			h->previousHeader->allocationSize += h->allocationSize;
+			// adjust the pointer
+			Header *nh = (Header *)((uptr)h + h->allocationSize);
+			if((uptr)nh != largeAllocationEnd)
+				nh->previousHeader = h->previousHeader;
+			h = h->previousHeader;
+		}
+		// if we don't have a previous header but we're still not
+		// at where we should be, that means some space is leftover
+		// in the beginning from a previous aligned allocation
+		if(h->previousHeader == NULL && (uptr)h != largeAllocationStart) {
+			// create a new header
+			Header *newHeader = (Header *)largeAllocationStart;
+			newHeader->allocationSize =
+			    h->allocationSize + ((uptr)h - largeAllocationStart);
+			newHeader->magic          = Header::Magic;
+			newHeader->previousHeader = NULL;
+			newHeader->left = newHeader->right = NULL;
+			// search for the next header
+			Header *nh = (Header *)(newHeader + newHeader->allocationSize);
+			if((uptr)nh < largeAllocationEnd) {
+				// adjust its previous header
+				nh->previousHeader = newHeader;
+			}
+			h = newHeader;
+		}
+		// finally, insert us back
+		insertHeader(h);
 	}
-	if(footer->magic != Footer::Magic) {
-		Terminal::err("Invalid footer magic!");
-		for(;;)
-			;
-	}
-	header->magic = Header::Magic; // mark it as a hole
-	// we may or may not want to add this header to free holes index, depending
-	// on the left and right holes
-	bool addToIndex = true;
-	// try to unify left hole
-	Footer *leftFooter = (Footer *)((uptr)header - sizeof(Footer));
-	if(leftFooter->magic == Footer::Magic &&
-	   leftFooter->header->magic == Header::Magic) {
-		// we have a valid hole on the left
-		// merge
-		u32 bak        = header->size;
-		header         = leftFooter->header;
-		footer->header = header;
-		header->size += bak;
-		addToIndex = false;
-	}
+}
 
-	// try to unify right hole
-	Header *rightHeader = (Header *)((uptr)footer + sizeof(Footer));
-	if(rightHeader->magic == Header::Magic) {
-		// valid hole in right
-		// merge
-		header->size += rightHeader->size;
-		footer =
-		    (Footer *)((uptr)rightHeader + rightHeader->size - sizeof(Footer));
-		footer->header = header; // point this footer to our header
-		                         // remove right head
-		u32 i = 0;
-		while(i < index.size && index.get(i) != rightHeader) i++;
-		// we should obviously find the item
-		// now remove it.
-		index.remove(i);
+Heap::Bucket *Heap::allocBucket(siz size, siz cls) {
+	// try to check if we have a free bucket
+	Bucket *b = NULL;
+	if(freeBuckets) {
+		b           = freeBuckets;
+		freeBuckets = freeBuckets->nextBucket;
+		// map the page
+		Paging::getPage((uptr)b->startMem, false,
+		                Paging::Directory::CurrentDirectory)
+		    ->alloc(true, true);
+		b->init(size);
+	} else {
+		if(bucketAllocationCurrent > bucketAllocationEnd) {
+			Terminal::err("No more memory to allocate a bucket!");
+			for(;;)
+				;
+		}
+		// try to allocate a new bucket
+		siz idx = getBucketIndex(bucketAllocationCurrent);
+		b       = &buckets[idx];
+		b       = Bucket::create(size, (uptr)b, bucketAllocationCurrent);
+		// if the page is not yet allocated, alloc it
+		Paging::getPage((uptr)bucketAllocationCurrent, true,
+		                Paging::Directory::CurrentDirectory)
+		    ->alloc(true, true);
+		bucketAllocationCurrent += BucketSize;
 	}
+	if(b == NULL)
+		return NULL;
+	b->nextBucket        = bucketClassList[cls];
+	bucketClassList[cls] = b;
+	return b;
+}
 
-	// try for contraction of the heap if this is the end address
-	/*
-	if((uptr)footer + sizeof(Footer) == end) {
-	    u32 oldLength = end - start;
-	    u32 newLength = contract((uptr)header - start);
-	    if(header->size > (oldLength - newLength)) {
-	        // this header should still exist, adjust the size
-	        header->size = oldLength - newLength;
-	        footer = (Footer *)((uptr)header + header->size - sizeof(Footer));
-	        footer->magic  = Footer::Magic;
-	        footer->header = header;
-	    } else {
-	        // this header does not exist anymore after contraction,
-	        // so remove it
-	        u32 i = 0;
-	        while(i < index.size && index.get(i) != header) i++;
-	        if(i < index.size) {
-	            addToIndex = false;
-	            index.remove(i);
-	        }
-	    }
-	}*/
+Heap::Header *Heap::findClosestHeader(siz size, bool pageAlign) {
+	Header *lastFound = NULL;
+	size += sizeof(Header);
+	Header *search = headerRoot;
+	while(search) {
+		if(search->allocationSize >= size && search->magic == Header::Magic) {
+			if(pageAlign) {
+				// check if the header is page aligned
+				// check if the size criteria will still satisfy
+				// if we add blank space up until the next page
+				uptr bak = (uptr)search;
+				Paging::alignIfNeeded(bak);
+				// so, our target memory will start from bak, header will
+				// start from bak - sizeof(Header), and the whole
+				// thing will end at bak + size - sizeof(Header)
+				uptr end = bak + size - sizeof(Header);
+				// so we need at least this amount of memory
+				uptr total = end - (uptr)search;
+				// check if we have it
+				if(search->allocationSize >= total) {
+					// we do, fine
+					lastFound = search;
+				}
+			} else
+				lastFound = search;
+		}
+		if(search->allocationSize >= size) {
+			search = search->left;
+		} else if(search->allocationSize < size) {
+			search = search->right;
+		}
+	}
+	return lastFound;
+}
 
-	if(addToIndex)
-		index.insert(header);
+void Heap::insertHeader(Header *h) {
+	Header **pos = &headerRoot;
+	while(*pos) {
+		if((*pos)->allocationSize >= h->allocationSize) {
+			pos = &(*pos)->left;
+		} else {
+			pos = &(*pos)->right;
+		}
+	}
+	*pos = h;
+}
+
+void Heap::removeHeader(Header *h, Header **slot) {
+	if(slot == NULL) {
+		slot = &headerRoot;
+		while(*slot != h) {
+			if(h->allocationSize > (*slot)->allocationSize)
+				slot = &(*slot)->right;
+			else
+				slot = &(*slot)->left;
+		}
+	}
+	if(h->left && h->right) {
+		// find the inorder successor
+		Header **childSlot    = &h->right;
+		Header * inorder_succ = h->right;
+		while(inorder_succ->left) {
+			childSlot    = &inorder_succ->left;
+			inorder_succ = inorder_succ->left;
+		}
+		// remove the successor from where it was
+		removeHeader(inorder_succ, childSlot);
+		// assign it here
+		*slot = inorder_succ;
+		// adjust the children
+		inorder_succ->left  = h->left;
+		inorder_succ->right = h->right;
+	} else if(h->left || h->right) {
+		Header *node = h->left == NULL ? h->right : h->left;
+		*slot        = node;
+	} else {
+		*slot = NULL;
+	}
+}
+
+void Heap::Header::ensureMapped(bool full) {
+	// map the first page
+	Paging::getPage((uptr)this, true, Paging::Directory::CurrentDirectory)
+	    ->alloc(true, true);
+	if(full) {
+		for(uptr i = (uptr)this + Paging::PageSize;
+		    i < (uptr)this + allocationSize; i += Paging::PageSize)
+			Paging::getPage(i, true, Paging::Directory::CurrentDirectory)
+			    ->alloc(true, true);
+	}
 }

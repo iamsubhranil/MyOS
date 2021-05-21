@@ -10,14 +10,14 @@ siz        Memory::Size             = 0;
 
 void *Memory::alloc(siz size) {
 	if(kernelHeap) {
-		return kernelHeap->alloc(size, false);
+		return kernelHeap->alloc(size);
 	}
 	return (void *)((uptr)(placementAddress += size) - size);
 }
 
 void *Memory::alloc_a(siz size) {
 	if(kernelHeap) {
-		return kernelHeap->alloc(size, true);
+		return kernelHeap->alloc_a(size);
 	}
 	Paging::alignIfNeeded(placementAddress);
 	return alloc(size);

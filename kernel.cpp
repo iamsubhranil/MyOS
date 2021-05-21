@@ -33,12 +33,12 @@ extern int hello() {
 void writeSomething() {
 	u32 res = 1;
 	for(;;) {
-		Asm::cli();
 		res++;
-		if(res % 1000000 == 0)
+		// Asm::cli();
+		if(res % 10000000 == 0)
 			Terminal::write("\nThread: ", (u32)Scheduler::CurrentTask->id,
 			                "\tresult: ", res);
-		Asm::sti();
+		// Asm::sti();
 	}
 	// u32 id = 1;
 	// while(1) {
@@ -53,7 +53,7 @@ extern "C" { /* Use C linkage for kernel_main. */
 #endif
 
 void addNewTask() {
-	for(u32 i = 0; i < 1; i++) {
+	for(u32 i = 0; i < 20; i++) {
 		Task *t   = Memory::create<Task>();
 		t->runner = writeSomething;
 		Scheduler::schedule(t);
@@ -105,6 +105,7 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 		// while(1)
 		//	;
 	}
+	Terminal::write("\n");
 	Terminal::write(Terminal::Mode::Dec);
 	addNewTask();
 	writeSomething();
