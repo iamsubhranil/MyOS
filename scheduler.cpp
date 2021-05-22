@@ -8,6 +8,7 @@ extern "C" {
 uptr        eip_load();
 extern void performTaskSwitch(uptr ebx, uptr edx, uptr esi, uptr ebp, uptr esp,
                               uptr physAddr, uptr eip);
+extern void __switch_task();
 }
 
 volatile Task *Scheduler::ReadyQueue   = NULL;
@@ -15,7 +16,7 @@ volatile Task *Scheduler::WaitingQueue = NULL;
 volatile Task *Scheduler::CurrentTask  = NULL;
 
 void Scheduler::schedule(Task *t) {
-	Asm::cli();
+	lock();
 	t->pageDirectory = Paging::Directory::CurrentDirectory->clone();
 	t->next          = ReadyQueue->next;
 	ReadyQueue->next = t;
@@ -56,11 +57,11 @@ void Scheduler::schedule(Task *t) {
 	*newStack-- = 0xED; // edi
 	// now turn back to the old directory
 	Paging::switchPageDirectory(CurrentTask->pageDirectory);
-	Asm::sti();
+	unlock();
 }
 
 void Scheduler::unschedule() {
-	Asm::cli();
+	lock();
 	volatile Task *parent;
 	for(parent = CurrentTask; parent->next != CurrentTask;
 	    parent = parent->next)
@@ -75,27 +76,20 @@ void Scheduler::unschedule() {
 	if(ReadyQueue == CurrentTask) {
 		ReadyQueue = CurrentTask->next;
 	}
+	// yield from current task
 	yield();
 }
 
-void Scheduler::yield(Task *to, Register *currentRegisters, bool finishIrq) {
-	Asm::cli();
-	CurrentTask->state = Task::State::Waiting;
-	if(currentRegisters)
-		memcpy((Register *)&CurrentTask->regs, currentRegisters,
-		       sizeof(Register));
-	else {
-		REG_DUMP2(&CurrentTask->regs);
-		// at this point, it may very well be running again
-		if(CurrentTask->state == Task::State::Ready)
-			return;
-	}
-	CurrentTask = to;
-	to->state   = Task::State::Ready;
-	if(finishIrq) {
-		IRQ::finishIrq(currentRegisters);
-	}
-	switchNext(to);
+void Scheduler::yield(Task *to) {
+	lock();
+	// search for the parent of the to task
+	Task *parent;
+	for(parent = to; parent->next != to; parent = parent->next)
+		;
+	parent->next      = to->next;
+	to->next          = CurrentTask->next;
+	CurrentTask->next = to;
+	yield();
 }
 
 extern "C" {
@@ -133,8 +127,11 @@ void Scheduler::scheduleNext(Register *oldRegisters) {
 }
 
 void Scheduler::switchNext(Task *t) {
-	performTaskSwitch(t->regs.ebx, t->regs.edi, t->regs.esi, t->regs.ebp,
-	                  t->regs.esp, t->pageDirectory->physicalAddr, t->regs.eip);
+	asm volatile("mov %0, %%eax\n"
+	             "jmp %1"
+	             :
+	             : "r"(t->regs.useless_esp), "m"(__switch_task)
+	             : "eax");
 }
 
 void Scheduler::init() {

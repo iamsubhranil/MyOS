@@ -1,4 +1,5 @@
 #include "terminal.h"
+#include "asm.h"
 #include "kernel_layout.h"
 #include "multiboot.h"
 #include "string.h"
@@ -71,6 +72,7 @@ void Terminal::moveUpOneRow() {
 }
 
 u32 Terminal::write(const char &c) {
+	PAUSEI();
 	switch(c) {
 		case '\n': column = VGA::Width - 1; break;
 		case '\r': column = 0; return 1; // we don't want to adjust anything
@@ -95,7 +97,7 @@ u32 Terminal::write(const char &c) {
 			moveUpOneRow();
 		}
 	}
-
+	RESUMEI();
 	return 1;
 }
 
@@ -198,6 +200,7 @@ u32 Terminal::write(const i64 &value) {
 }
 
 u32 Terminal::write(VGA::Color c) {
+	PAUSEI();
 	switch(c) {
 		case VGA::Color::Reset: {
 			setColor(previousColor);
@@ -206,10 +209,12 @@ u32 Terminal::write(VGA::Color c) {
 			setColor(c);
 		} break;
 	}
+	RESUMEI();
 	return 0;
 }
 
 u32 Terminal::write(Terminal::Mode m) {
+	PAUSEI();
 	switch(m) {
 		case Terminal::Mode::Reset: {
 			setMode(previousMode);
@@ -218,10 +223,12 @@ u32 Terminal::write(Terminal::Mode m) {
 			setMode(m);
 		} break;
 	}
+	RESUMEI();
 	return 0;
 }
 
 u32 Terminal::write(Terminal::Move m) {
+	PAUSEI();
 	switch(m) {
 		case Terminal::Move::Up: {
 			if(row == 0) {
@@ -244,10 +251,12 @@ u32 Terminal::write(Terminal::Move m) {
 			column = (column + 1) % VGA::Width;
 		} break;
 	}
+	RESUMEI();
 	return 0;
 }
 
 u32 Terminal::write(Terminal::Control c) {
+	PAUSEI();
 	switch(c) {
 		case Terminal::Control::ClearLine: {
 			for(u32 i = 0; i < VGA::Width; i++) {
@@ -256,5 +265,6 @@ u32 Terminal::write(Terminal::Control c) {
 			}
 		} break;
 	}
+	RESUMEI();
 	return 0;
 }

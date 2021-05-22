@@ -45,12 +45,22 @@ struct Asm {
 		asm volatile("mov %0, %%cr3" ::"r"(address));
 	}
 
-	struct DisableInterrupt {
-		DisableInterrupt() {
-			Asm::cli();
-		}
-		~DisableInterrupt() {
-			Asm::sti();
-		}
-	};
+	static inline void disableInterrupt(uptr &flags) {
+		asm volatile("pushf\n"
+		             "pop %0\n"
+		             "cli"
+		             : "=g"(flags));
+	}
+
+	static inline void restoreInterrupt(uptr flags) {
+		asm volatile("push %0\n"
+		             "popf"
+		             :
+		             : "g"(flags));
+	}
 };
+
+#define PAUSEI()          \
+	uptr __current_flags; \
+	Asm::disableInterrupt(__current_flags);
+#define RESUMEI() Asm::restoreInterrupt(__current_flags);

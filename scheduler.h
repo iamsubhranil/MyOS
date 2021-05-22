@@ -1,5 +1,6 @@
 #pragma once
 
+#include "asm.h"
 #include "future.h"
 #include "memory.h"
 #include "semaphore.h"
@@ -45,25 +46,36 @@ struct Scheduler {
 
 	// will instruct the scheduler to move to the next task
 	static void yield() {
-		Scheduler::yield(CurrentTask->next);
+		// enable interrupts if it wasn't already
+		// and then call the scheduler interrupt
+		asm volatile("sti\n"
+		             "int $0x20\n");
 	}
 	// will instruct the scheduler to move to the
-	// specified task.
-	// if a state is specified, current task will
-	// resume from that state next time. otherwise,
-	// the registers will be dumped inside 'yield',
-	// and those will be used.
-	// if finishIrq is true, we will send an EOI
-	// signal to the current Irq device before the
-	// switch.
-	static void yield(Task *t, Register *currentRegisters = NULL,
-	                  bool finishIrq = false);
+	// specified task. first, pointers will be adjusted
+	// to make that task is the next task of CurrentTask,
+	// then an yield will be called
+	static void yield(Task *t);
 
-	// will put the current task in the waiting queue,
-	// and resume once the semaphore is available
-	static void wait(Semaphore *s);
+	static volatile Task *getCurrentTask() {
+		return CurrentTask;
+	}
 
-	static Task *getCurrentTask();
+	// we're not doing SMP yet, so this should suffice
+	static inline void lock() {
+		Asm::cli();
+	}
+
+	static inline void unlock() {
+		Asm::sti();
+	}
+
+	// removes current task from readyqueue
+	// and adds it to the wait queue.
+	// proceeds the next task.
+	// when the task is put back on the
+	// readyqueue, it returns back.
+	static void wait();
 
 	// periodic scheduler, the first one does the
 	// actual bookkeeping, the second one just performs

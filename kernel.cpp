@@ -26,18 +26,28 @@
 
 // syscall
 extern int hello() {
-	Terminal::write("syscall is working!\n");
+	Terminal t;
+	t.write("syscall is working!\n");
 	return 0;
 }
 
 void writeSomething() {
 	u32 res = 1;
+	Asm::cli();
+	u32 id = Scheduler::CurrentTask->id;
+	Asm::sti();
 	for(;;) {
 		res++;
-		// Asm::cli();
-		if(res % 10000000 == 0)
-			Terminal::write("\nThread: ", (u32)Scheduler::CurrentTask->id,
-			                "\tresult: ", res);
+		if(res % ((id + 1) * 5000000) == 0) {
+			Asm::cli();
+			Terminal::write("Thread: ", id, " yielding..\n");
+			Asm::sti();
+			Scheduler::yield();
+			Asm::cli();
+			Terminal::write("Thread: ", id, " resumed..\n");
+			Terminal::write("Thread: ", id, "\tresult: ", res, "\n");
+			Asm::sti();
+		}
 		// Asm::sti();
 	}
 	// u32 id = 1;
