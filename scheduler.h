@@ -19,26 +19,45 @@ struct Scheduler {
 		return submit(run, args...)->get();
 	}
 
+	static void populateStack(uptr *&stk) {
+		(void)stk;
+	}
+	template <typename F, typename... T>
+	static void populateStack(uptr *&stk, F arg, T... args) {
+		populateStack(stk, args...);
+		*stk = (uptr)arg;
+		stk--;
+	}
+
 	// this schedules the task, but returns immediately.
 	// returns an object which will contain the result,
 	// once it is available.
 	template <typename T, typename... F>
 	static Future<T> *submit(T (*run)(F... args), F... args) {
+		lock();
 		Future<T> *result = Memory::create<Future<T>>();
-		auto       a      = [&run, &result, &args...]() -> void {
-            result->set(run(args...));
-            // after we are done executing what was required,
-            // we will remove ourselves from the ready queue
-            Scheduler::unschedule();
-		};
-		Task *t   = Memory::create<Task>();
-		t->runner = a;
-		schedule(t);
+		Task *     t      = Memory::create<Task>();
+		t->runner         = (void *)run;
+		schedule(t, sizeof...(args), false);
+		uptr *stk = (uptr *)t->regs.useless_esp;
+		// skip the registers
+		stk -= 8;
+		// switch page directory
+		Paging::switchPageDirectory(t->pageDirectory);
+		populateStack(stk, args...);
+		Paging::switchPageDirectory(CurrentTask->pageDirectory);
+		// unlock and return
+		unlock();
 		return result;
 	}
 
 	// adds a task to the ready queue
-	static void schedule(Task *t);
+	// number of arguments to the task, used to prepare
+	// the stack for a new task initialization.
+	// if immediate is false, schedule does not enable
+	// interrupts before returning, and leaves that task
+	// upto the caller.
+	static void schedule(Task *t, u32 numargs = 0, bool immediate = true);
 	// removes the current task from ready queue,
 	// and hopefully, sometime in the future,
 	// releases its resources

@@ -651,6 +651,8 @@ _irq0:
     pop %fs
     pop %es
     pop %ds
+    cmp $0x5441534b, (%esp) // check if this is a new task switch
+    je prepareNewTask
     add $0x8, %esp // pop error code and irq number
     pop eip_bak   // store eip in backup
     add $0x4, %esp // pop %cs, ignore cs for now
@@ -660,29 +662,67 @@ _irq0:
     jmp *eip_bak // jump to the ip
 
 
+prepareNewTask:
+    add $0x8, %esp // pop error code and irq number
+    pop eip_bak   // store eip in backup
+    add $0x4, %esp // pop %cs, ignore cs for now
+    popf // pop the flags
+    // now, we're pointing to the location which
+    // contains the number of arguments to the
+    // initializer routine of this task.
+    // our arguments start from offset 4 * 17 from
+    // here, because we pushed 17 elements on the stack.
+    // if we have zero arguments, we have nothing to do
+    mov (%esp), %ebx
+    cmp $0, %ebx
+    je initTask
+    mov %esp, %eax // store where we are now
+    // we have some arguments, so call memmove now to move
+    // them here
+    // first, prepare the stack for memmove, avoiding our arguments
+    sub $68, %esp // arg start
+    imul $4, %ebx // arg size in bytes
+    sub %ebx, %esp // stack for memmove should start from here
+    add $4, %esp // this is our first argument, so this is the source
+    mov %esp, %edx // save the source
+    sub %ebx, %eax // decrease the original sp by ebx bytes, which is our dest
+    add $4, %eax // first arg should be moved here wrt to the original sp
+    // save eax
+    push %eax
+    // arguments for memmove
+    push %ebx // size
+    push %edx // source
+    push %eax // this is our dest
+    // memmove may make some of our registers garbage,
+    // but since we are starting a new task, we're
+    // not too much worried about that for now
+    call memmove // move now
+    // now arguments of the task are at their positions,
+    // so pop the arguments for memove
+    add $12, %esp
+    // pop the modified sp
+    pop %eax
+    // set sp to the modified sp
+    mov %eax, %esp
+    sub $4, %esp
+    // now the stack is ready
+initTask:
+    // now the task will push the base pointer to the stack top
+    // clear out all our registers
+    xor %eax, %eax
+    xor %ebx, %ebx
+    xor %ecx, %ecx
+    xor %edx, %edx
+    xor %esi, %esi
+    xor %edi, %edi
+    mov $0x20, %al // finish the irq
+    out %al, $0x20
+    jmp *eip_bak // jump to the ip
+
 .global eip_load
 eip_load:
     mov (%esp), %eax
     ret
-
-.global performTaskSwitch
-performTaskSwitch:
-    cli                 // disable interrupts
-    mov 4(%esp), %ebx   // ebx
-    mov 8(%esp), %edi   // edi
-    mov 12(%esp), %esi  // esi
-    mov 16(%esp), %ebp  // ebp
-    mov 20(%esp), %ecx  // save it to a register for now
-    mov 24(%esp), %eax  // physical address of page directory
-    mov %cr3, %edx
-    cmp %eax, %edx      // if our page dir is same, skip the costly swap
-    je doSwitch
-    mov %eax, %cr3      // set the page directory
-doSwitch:
-    mov 28(%esp), %eax  // eip
-    mov %ecx, %esp      // set the esp
-    sti                 // enable interrupts
-    jmp *%eax           // jump to the eip
 
 /*
 Set the size of the _start symbol to the current location '.' minus its start.

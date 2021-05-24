@@ -73,23 +73,9 @@ struct Task {
 	Paging::Directory *pageDirectory;
 	Task *             next;
 	State              state;
-	typedef void (*Runner)();
-	Runner runner;
+	void *             runner; // address of the function
 
 	static const siz DefaultStackSize =
 	    1024 * 1024 * 4; // let's make it 4KiB for now
 	Task();
-	// the first time run is called, it saves the
-	// eip of the point from which runner() is started
-	void        run();
-	static void begin();
-	// fork requires copying the old stack, which requires changing
-	// ebp values, and that's a bit hackish. so we don't provide
-	// that for now.
-	// static u32  fork();   // creates a new task
-
-	static void switch_(Register *r); // performs the task switch
-
-	static void
-	    performTaskSwitch(volatile Task *t); // it forgets where it came from
 };

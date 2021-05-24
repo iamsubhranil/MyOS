@@ -15,7 +15,7 @@ volatile Task *Scheduler::ReadyQueue   = NULL;
 volatile Task *Scheduler::WaitingQueue = NULL;
 volatile Task *Scheduler::CurrentTask  = NULL;
 
-void Scheduler::schedule(Task *t) {
+void Scheduler::schedule(Task *t, u32 numargs, bool immediate) {
 	lock();
 	t->pageDirectory = Paging::Directory::CurrentDirectory->clone();
 	t->next          = ReadyQueue->next;
@@ -25,17 +25,22 @@ void Scheduler::schedule(Task *t) {
 	Paging::switchPageDirectory(t->pageDirectory);
 	uptr *newStack = (uptr *)Memory::alloc_a(Task::DefaultStackSize) +
 	                 Task::DefaultStackSize / sizeof(uptr) - 1;
-	*newStack-- = 0x0; // ebp will be pushed here
+	*newStack-- = numargs; // ebp will be pushed here
 	// stack model for the interrupt handler
 	// flags
 	*newStack-- = 0x0;
 	// cs
 	*newStack-- = 0x0;
 	// ip to jump
-	*newStack-- = t->regs.eip = (uptr)&Task::begin;
+	*newStack-- = t->regs.eip = (uptr)t->runner;
 	// error code and irq number
 	*newStack-- = 0x0;
-	*newStack-- = 0x20;
+	// to make the assembly scheduler notify that this is a new task
+	// and it needs some special stack arrangements, we change the
+	// interrupt number to TASK (hex). the scheduler will compare
+	// the interrupt number, and jump to a special routine to
+	// manage the arguments on the stack if it matches with this.
+	*newStack-- = 0x5441534b;
 	// fs gs es ds
 	*newStack-- = 0x10;
 	*newStack-- = 0x10;
@@ -57,7 +62,8 @@ void Scheduler::schedule(Task *t) {
 	*newStack-- = 0xED; // edi
 	// now turn back to the old directory
 	Paging::switchPageDirectory(CurrentTask->pageDirectory);
-	unlock();
+	if(immediate)
+		unlock();
 }
 
 void Scheduler::unschedule() {
@@ -124,14 +130,6 @@ extern uptr scheduler_scheduleNext(Register *oldRegisters) {
 
 void Scheduler::scheduleNext(Register *oldRegisters) {
 	scheduler_scheduleNext(oldRegisters);
-}
-
-void Scheduler::switchNext(Task *t) {
-	asm volatile("mov %0, %%eax\n"
-	             "jmp %1"
-	             :
-	             : "r"(t->regs.useless_esp), "m"(__switch_task)
-	             : "eax");
 }
 
 void Scheduler::init() {

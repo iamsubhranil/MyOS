@@ -5,12 +5,6 @@
 #include "terminal.h"
 #include "timer.h"
 
-extern "C" {
-extern uptr eip_load();
-extern void performTaskSwitch(uptr ebx, uptr edx, uptr esi, uptr ebp, uptr esp,
-                              uptr physAddr, uptr eip);
-}
-
 Task::StateSegment Task::taskStateSegment = {0, 0, 0, 0, 0, 0, 0, 0, 0,
                                              0, 0, 0, 0, 0, 0, 0, 0, 0,
                                              0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -43,12 +37,6 @@ void Task::setKernelStack(uptr stack_) {
 	taskStateSegment.esp0 = stack_;
 }
 
-void Task::performTaskSwitch(volatile Task *t) {
-	::performTaskSwitch(t->regs.ebx, t->regs.edi, t->regs.esi, t->regs.ebp,
-	                    t->regs.esp, t->pageDirectory->physicalAddr,
-	                    t->regs.eip);
-}
-
 u32 Task::NextPid = 0;
 
 Task::Task() {
@@ -57,15 +45,4 @@ Task::Task() {
 	state = State::Scheduled;
 	memset(&regs, 0, sizeof(Register));
 	regs.fs = regs.es = regs.ds = regs.gs = 0x10;
-}
-
-void Task::run() {
-	runner();
-}
-
-void Task::begin() {
-	Task *t;
-	asm volatile("mov %%esi, %0" : "=g"(t));
-	asm volatile("sti");
-	t->runner();
 }

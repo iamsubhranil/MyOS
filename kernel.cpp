@@ -31,11 +31,13 @@ extern int hello() {
 	return 0;
 }
 
-void writeSomething() {
+void writeSomething(u32 id, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g) {
 	u32 res = 1;
-	Asm::cli();
-	u32 id = Scheduler::CurrentTask->id;
-	Asm::sti();
+	Scheduler::lock();
+	Terminal::write("Starting task ", id, "..\n");
+	Terminal::write("Args are: ", a, " ", b, " ", c, " ", d, " ", e, " ", f,
+	                " ", g, " \n");
+	Scheduler::unlock();
 	for(;;) {
 		res++;
 		if(res % ((id + 1) * 5000000) == 0) {
@@ -63,10 +65,20 @@ extern "C" { /* Use C linkage for kernel_main. */
 #endif
 
 void addNewTask() {
-	for(u32 i = 0; i < 20; i++) {
-		Task *t   = Memory::create<Task>();
-		t->runner = writeSomething;
-		Scheduler::schedule(t);
+	for(u32 i = 1; i < 25; i++) {
+		Scheduler::submit(writeSomething, i, i * 2, i * 4, i * 8, i * 16,
+		                  i * 32, i * 64, i * 128);
+	}
+}
+
+void loopTask() {
+	Terminal::write("Starting loop..");
+	writeSomething(1, 2, 3, 4, 5, 6, 7, 8);
+}
+
+void addNewTaskNoArg() {
+	for(u32 i = 1; i < 5; i++) {
+		Scheduler::submit(loopTask);
 	}
 }
 
@@ -118,7 +130,8 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	Terminal::write("\n");
 	Terminal::write(Terminal::Mode::Dec);
 	addNewTask();
-	writeSomething();
+	addNewTaskNoArg();
+	writeSomething(0, 1, 2, 3, 4, 5, 6, 7);
 	// asm volatile("1: jmp 1b");
 }
 
