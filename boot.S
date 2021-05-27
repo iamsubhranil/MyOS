@@ -618,13 +618,6 @@ irq_common_stub:
     add $0x8, %esp // cleanup error code and irq number
     iret
 
-.global esp_bak
-esp_bak:
-.skip 4
-.global eip_bak
-eip_bak:
-.skip 4
-
 .global _irq0
 _irq0:
     cli
@@ -645,38 +638,45 @@ _irq0:
     call scheduler_scheduleNext // change pointers and whatnot
     mov %eax, %esp // restore the old stack pointer
     sub $32, %esp // pusha pushed the sp before the instruction, so point to the last pushed item
+    // pop gpr's
     popa
     // pop segment registers
     pop %gs
     pop %fs
     pop %es
     pop %ds
-    cmp $0x5441534b, (%esp) // check if this is a new task switch
+    cmpl $0x5441534b, (%esp) // check if this is a new task switch
     je prepareNewTask
-    add $0x8, %esp // pop error code and irq number
-    pop eip_bak   // store eip in backup
+    add $0x4, %esp // pop error code
+    add $0x4, %esp // pop irq number
+    add $0x4, %esp // skip eip for now
     add $0x4, %esp // pop %cs, ignore cs for now
     popf // pop the flags
+    // save eax
+    push %eax
     mov $0x20, %al // finish the irq
     out %al, $0x20
-    jmp *eip_bak // jump to the ip
+    // restore eax back
+    pop %eax
+    jmp *-0xc(%esp) // jump to the ip
 
-
+// prepares the stack for a task to be inited
 prepareNewTask:
     add $0x8, %esp // pop error code and irq number
-    pop eip_bak   // store eip in backup
+    pop %edi   // store eip in edi
     add $0x4, %esp // pop %cs, ignore cs for now
-    popf // pop the flags
+    popf // pop the flags, interrupts are enabled
     // now, we're pointing to the location which
     // contains the number of arguments to the
     // initializer routine of this task.
     // our arguments start from offset 4 * 17 from
     // here, because we pushed 17 elements on the stack.
     // if we have zero arguments, we have nothing to do
+    mov %esp, %eax // store where we are now
+    mov %eax, %esi // make a backup in a callee saved register
     mov (%esp), %ebx
     cmp $0, %ebx
     je initTask
-    mov %esp, %eax // store where we are now
     // we have some arguments, so call memmove now to move
     // them here
     // first, prepare the stack for memmove, avoiding our arguments
@@ -704,20 +704,42 @@ prepareNewTask:
     pop %eax
     // set sp to the modified sp
     mov %eax, %esp
-    sub $4, %esp
-    // now the stack is ready
 initTask:
+    // push our return address
+    push $leaveTask
+    // now the stack is ready
     // now the task will push the base pointer to the stack top
-    // clear out all our registers
-    xor %eax, %eax
+    // these registers are callee saved, so we can
+    // store our original esp value in any one of them
     xor %ebx, %ebx
+    // esi stores the original esp, so don't clean it out
+    // edi stores the jump ip, don't clean it either
+    // clear out all other registers
+    xor %eax, %eax
     xor %ecx, %ecx
     xor %edx, %edx
-    xor %esi, %esi
-    xor %edi, %edi
     mov $0x20, %al // finish the irq
     out %al, $0x20
-    jmp *eip_bak // jump to the ip
+    jmp *%edi // jump to the ip
+
+.global leaveTask
+leaveTask:
+    // restore the original esp
+    mov %esi, %esp
+    // pop the first argument
+    add $0x4, %esp
+    // at this point, eax contains the result, if any.
+    // esp contains the address of Future<x>::set,
+    // esp + 4 contains a dummy slot for the return
+    // address of set, esp + 8 contains the address of the
+    // future itself as the first argument, and esp + 12
+    // contains an empty slot to push the eax register.
+    // so push the eax register to esp + 12
+    mov %eax, 0xc(%esp)
+    // point to the return address
+    add $0x4, %esp
+    // finally, jmp to set
+    jmp *-0x4(%esp)
 
 .global eip_load
 eip_load:

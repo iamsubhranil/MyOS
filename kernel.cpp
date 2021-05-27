@@ -76,10 +76,31 @@ void loopTask() {
 	writeSomething(1, 2, 3, 4, 5, 6, 7, 8);
 }
 
+u32 fib(u32 val) {
+	if(val < 2)
+		return val;
+	return fib(val - 1) + fib(val - 2);
+}
+
+void calcFib(u32 id) {
+	u32 res = fib(35);
+	Terminal::write("Thread ", id, ": ", res, "\n");
+}
+
+void addFibTask() {
+	for(u32 i = 1; i < 25; i++) {
+		Scheduler::submit(calcFib, i);
+	}
+}
+
 void addNewTaskNoArg() {
 	for(u32 i = 1; i < 5; i++) {
 		Scheduler::submit(loopTask);
 	}
+}
+
+void finishableTask() {
+	Terminal::write("In finishable task..\n");
 }
 
 // entry-point
@@ -129,8 +150,8 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	}
 	Terminal::write("\n");
 	Terminal::write(Terminal::Mode::Dec);
-	addNewTask();
-	addNewTaskNoArg();
+	Scheduler::submit(finishableTask);
+	addFibTask();
 	writeSomething(0, 1, 2, 3, 4, 5, 6, 7);
 	// asm volatile("1: jmp 1b");
 }

@@ -29,8 +29,7 @@ gdbstart:
 	gdb \
     -ex "file myos.bin" \
 	-ex 'set arch auto' \
-    -ex 'target remote localhost:1234' \
-    -ex 'break kernelMain' \
+    -ex 'target remote localhost:1234'
 
 clean:
 	$(RM) -f $(OBJS) myos.bin
@@ -56,3 +55,6 @@ debug: boot linker start
 
 debug_gdb: QEMUFLAGS += -S -s
 debug_gdb: debug
+
+dis:
+	objdump -lSCwr -j .text --visualize-jumps=extended-color --disassemble="$(sym)" myos.bin

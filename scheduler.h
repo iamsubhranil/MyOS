@@ -38,7 +38,8 @@ struct Scheduler {
 		Future<T> *result = Memory::create<Future<T>>();
 		Task *     t      = Memory::create<Task>();
 		t->runner         = (void *)run;
-		schedule(t, sizeof...(args), false);
+		schedule(t, (void *)result, (void *)&Future<T>::set, sizeof...(args),
+		         false);
 		uptr *stk = (uptr *)t->regs.useless_esp;
 		// skip the registers
 		stk -= 8;
@@ -52,18 +53,25 @@ struct Scheduler {
 	}
 
 	// adds a task to the ready queue
+	// future_addr contains the address of the future which
+	// will store the return value.
+	// future_set contains the address of the Future::set
+	// function, which will be called to set the return
+	// value, and wake any waiting tasks.
 	// number of arguments to the task, used to prepare
 	// the stack for a new task initialization.
 	// if immediate is false, schedule does not enable
 	// interrupts before returning, and leaves that task
 	// upto the caller.
-	static void schedule(Task *t, u32 numargs = 0, bool immediate = true);
+	static void schedule(Task *t, void *future_addr, void *future_set,
+	                     u32 numargs = 0, bool immediate = true);
 	// removes the current task from ready queue,
 	// and hopefully, sometime in the future,
 	// releases its resources
 	static void unschedule();
 
-	// will instruct the scheduler to move to the next task
+	// will instruct the scheduler to move to the next task,
+	// saving the state of the current task.
 	static void yield() {
 		// enable interrupts if it wasn't already
 		// and then call the scheduler interrupt

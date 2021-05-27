@@ -4,18 +4,12 @@
 #include "terminal.h"
 #include "timer.h"
 
-extern "C" {
-uptr        eip_load();
-extern void performTaskSwitch(uptr ebx, uptr edx, uptr esi, uptr ebp, uptr esp,
-                              uptr physAddr, uptr eip);
-extern void __switch_task();
-}
-
 volatile Task *Scheduler::ReadyQueue   = NULL;
 volatile Task *Scheduler::WaitingQueue = NULL;
 volatile Task *Scheduler::CurrentTask  = NULL;
 
-void Scheduler::schedule(Task *t, u32 numargs, bool immediate) {
+void Scheduler::schedule(Task *t, void *future_addr, void *future_set,
+                         u32 numargs, bool immediate) {
 	lock();
 	t->pageDirectory = Paging::Directory::CurrentDirectory->clone();
 	t->next          = ReadyQueue->next;
@@ -25,15 +19,22 @@ void Scheduler::schedule(Task *t, u32 numargs, bool immediate) {
 	Paging::switchPageDirectory(t->pageDirectory);
 	uptr *newStack = (uptr *)Memory::alloc_a(Task::DefaultStackSize) +
 	                 Task::DefaultStackSize / sizeof(uptr) - 1;
-	*newStack-- = numargs; // ebp will be pushed here
+	// stack for task finish
+	*newStack-- = 0x0; // empty slot to store eax
+	*newStack-- = (uptr)future_addr;
+	*newStack-- =
+	    (uptr)&Scheduler::unschedule; // return address from Future<X>::set
+	*newStack-- = (uptr)future_set;   // address of Future<X>::set
+	// stack for task begin
+	*newStack-- = numargs;
 	// stack model for the interrupt handler
 	// flags
-	*newStack-- = 0x0;
+	*newStack-- = 0x200; // enable interrupts
 	// cs
 	*newStack-- = 0x0;
 	// ip to jump
 	*newStack-- = t->regs.eip = (uptr)t->runner;
-	// error code and irq number
+	// error code
 	*newStack-- = 0x0;
 	// to make the assembly scheduler notify that this is a new task
 	// and it needs some special stack arrangements, we change the
@@ -50,16 +51,14 @@ void Scheduler::schedule(Task *t, u32 numargs, bool immediate) {
 	t->regs.esp = t->regs.useless_esp = (uptr)newStack;
 	newStack--;
 	// push 8 gpr's
-	*newStack-- = 0xA;   // eax
-	*newStack-- = 0xC;   // ecx
-	*newStack-- = 0xD;   // edx
-	*newStack-- = 0xB;   // ebx
-	*newStack-- = 0xEAC; // esp
-	*newStack-- = 0xEB;  // ebp
-
-	*newStack-- = t->regs.esi = (uptr)t; // esi contains our argument
-
-	*newStack-- = 0xED; // edi
+	*newStack-- = 0x0; // eax
+	*newStack-- = 0x0; // ecx
+	*newStack-- = 0x0; // edx
+	*newStack-- = 0x0; // ebx
+	*newStack-- = 0x0; // esp
+	*newStack-- = 0x0; // ebp
+	*newStack-- = 0x0; // esi
+	*newStack-- = 0x0; // edi
 	// now turn back to the old directory
 	Paging::switchPageDirectory(CurrentTask->pageDirectory);
 	if(immediate)
@@ -82,8 +81,9 @@ void Scheduler::unschedule() {
 	if(ReadyQueue == CurrentTask) {
 		ReadyQueue = CurrentTask->next;
 	}
-	// yield from current task
-	yield();
+	unlock();
+	// wait up until we are eventually rescheduled
+	asm volatile("1: jmp 1b");
 }
 
 void Scheduler::yield(Task *to) {
