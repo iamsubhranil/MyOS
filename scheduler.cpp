@@ -81,9 +81,8 @@ void Scheduler::unschedule() {
 	if(ReadyQueue == CurrentTask) {
 		ReadyQueue = CurrentTask->next;
 	}
-	unlock();
-	// wait up until we are eventually rescheduled
-	asm volatile("1: jmp 1b");
+	// immediately jump to the next task
+	yield();
 }
 
 void Scheduler::yield(Task *to) {
