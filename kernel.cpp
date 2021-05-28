@@ -33,11 +33,9 @@ extern int hello() {
 
 void writeSomething(u32 id, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g) {
 	u32 res = 1;
-	Scheduler::lock();
 	Terminal::write("Starting task ", id, "..\n");
 	Terminal::write("Args are: ", a, " ", b, " ", c, " ", d, " ", e, " ", f,
 	                " ", g, " \n");
-	Scheduler::unlock();
 	for(;;) {
 		res++;
 		if(res % ((id + 1) * 5000000) == 0) {

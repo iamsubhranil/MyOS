@@ -26,8 +26,6 @@ void Timer::handler(Register *r) {
 	(void)r;
 	/* Increment our 'tick count' */
 	ticks++;
-	// switch task
-	Scheduler::scheduleNext(r);
 	// Terminal::prompt(VGA::Color::Blue, "Timer", "Tick..");
 
 	/* Every 'frequency' clocks (approximately 1 second), we will

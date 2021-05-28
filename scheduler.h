@@ -3,7 +3,8 @@
 #include "asm.h"
 #include "future.h"
 #include "memory.h"
-#include "semaphore.h"
+#include "scopedlock.h"
+#include "spinlock.h"
 #include "task.h"
 
 struct Scheduler {
@@ -11,6 +12,7 @@ struct Scheduler {
 	static volatile Task *ReadyQueue;
 	static volatile Task *WaitingQueue;
 	static volatile Task *CurrentTask;
+	static SpinLock       SchedulerLock;
 
 	// this will schedule the task, and block till the task
 	// is finished, and then return the result
@@ -34,12 +36,10 @@ struct Scheduler {
 	// once it is available.
 	template <typename T, typename... F>
 	static Future<T> *submit(T (*run)(F... args), F... args) {
-		lock();
 		Future<T> *result = Memory::create<Future<T>>();
 		Task *     t      = Memory::create<Task>();
 		t->runner         = (void *)run;
-		schedule(t, (void *)result, (void *)&Future<T>::set, sizeof...(args),
-		         false);
+		prepare(t, (void *)result, (void *)&Future<T>::set, sizeof...(args));
 		uptr *stk = (uptr *)t->regs.useless_esp;
 		// skip the registers
 		stk -= 8;
@@ -47,12 +47,20 @@ struct Scheduler {
 		Paging::switchPageDirectory(t->pageDirectory);
 		populateStack(stk, args...);
 		Paging::switchPageDirectory(CurrentTask->pageDirectory);
-		// unlock and return
-		unlock();
+		appendTask(t);
 		return result;
 	}
 
-	// adds a task to the ready queue
+	// temporarily suspends the task switch
+	static void suspend() {
+		Asm::cli();
+	}
+	// resumes task switch if it was suspended
+	static void resume() {
+		Asm::sti();
+	}
+
+	// prepares a new task to be added the ready queue
 	// future_addr contains the address of the future which
 	// will store the return value.
 	// future_set contains the address of the Future::set
@@ -63,8 +71,11 @@ struct Scheduler {
 	// if immediate is false, schedule does not enable
 	// interrupts before returning, and leaves that task
 	// upto the caller.
-	static void schedule(Task *t, void *future_addr, void *future_set,
-	                     u32 numargs = 0, bool immediate = true);
+	// it does not acquire a lock. that is upto the caller.
+	static void prepare(Task *t, void *future_addr, void *future_set,
+	                    u32 numargs);
+	// appends a task in the ready queue
+	static void appendTask(Task *t);
 	// removes the current task from ready queue,
 	// and hopefully, sometime in the future,
 	// releases its resources
@@ -87,28 +98,6 @@ struct Scheduler {
 	static volatile Task *getCurrentTask() {
 		return CurrentTask;
 	}
-
-	// we're not doing SMP yet, so this should suffice
-	static inline void lock() {
-		Asm::cli();
-	}
-
-	static inline void unlock() {
-		Asm::sti();
-	}
-
-	// removes current task from readyqueue
-	// and adds it to the wait queue.
-	// proceeds the next task.
-	// when the task is put back on the
-	// readyqueue, it returns back.
-	static void wait();
-
-	// periodic scheduler, the first one does the
-	// actual bookkeeping, the second one just performs
-	// the switch.
-	static void scheduleNext(Register *oldRegisters);
-	static void switchNext(Task *newTask);
 
 	static void init();
 };

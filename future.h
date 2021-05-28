@@ -1,37 +1,49 @@
 #pragma once
 
-template <typename T> struct Future {
-	T    value;
-	bool isAvailable;
+#include "scopedlock.h"
+#include "spinlock.h"
+#include "task.h"
 
-	Future() : isAvailable(false) {
+struct FutureBase {
+	bool     isAvailable;
+	SpinLock lock;
+	Task *   waitingTasks;
+
+	FutureBase();
+
+	void awakeAllNoLock();
+	void waitTillAvailable();
+};
+
+template <typename T> struct Future : FutureBase {
+	T value;
+
+	Future() : FutureBase() {
 	}
 
 	void set(T v) {
-		value       = v;
-		isAvailable = true;
+		ScopedLock sl(lock);
+		value = v;
+		awakeAllNoLock();
 	}
 
 	T get() {
-		while(!isAvailable)
-			;
+		waitTillAvailable();
 		return value;
 	}
 };
 
-template <> struct Future<void> {
-	bool isAvailable;
+template <> struct Future<void> : FutureBase {
 
-	Future() : isAvailable(false) {
+	Future() : FutureBase() {
 	}
 
 	void set() {
-		isAvailable = true;
+		ScopedLock l(lock);
+		awakeAllNoLock();
 	}
 
 	void get() {
-		while(!isAvailable)
-			;
+		waitTillAvailable();
 	}
 };
-;

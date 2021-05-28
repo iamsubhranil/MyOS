@@ -4,17 +4,14 @@
 #include "terminal.h"
 #include "timer.h"
 
-volatile Task *Scheduler::ReadyQueue   = NULL;
-volatile Task *Scheduler::WaitingQueue = NULL;
-volatile Task *Scheduler::CurrentTask  = NULL;
+volatile Task *Scheduler::ReadyQueue    = NULL;
+volatile Task *Scheduler::WaitingQueue  = NULL;
+volatile Task *Scheduler::CurrentTask   = NULL;
+SpinLock       Scheduler::SchedulerLock = SpinLock();
 
-void Scheduler::schedule(Task *t, void *future_addr, void *future_set,
-                         u32 numargs, bool immediate) {
-	lock();
+void Scheduler::prepare(Task *t, void *future_addr, void *future_set,
+                        u32 numargs) {
 	t->pageDirectory = Paging::Directory::CurrentDirectory->clone();
-	t->next          = ReadyQueue->next;
-	ReadyQueue->next = t;
-	ReadyQueue       = t;
 	// allocate a new stack
 	Paging::switchPageDirectory(t->pageDirectory);
 	uptr *newStack = (uptr *)Memory::alloc_a(Task::DefaultStackSize) +
@@ -61,12 +58,19 @@ void Scheduler::schedule(Task *t, void *future_addr, void *future_set,
 	*newStack-- = 0x0; // edi
 	// now turn back to the old directory
 	Paging::switchPageDirectory(CurrentTask->pageDirectory);
-	if(immediate)
-		unlock();
+}
+
+void Scheduler::appendTask(Task *t) {
+	ScopedLock sl(SchedulerLock);
+	suspend();
+	t->next          = ReadyQueue->next;
+	ReadyQueue->next = t;
+	ReadyQueue       = t;
+	resume();
 }
 
 void Scheduler::unschedule() {
-	lock();
+	SchedulerLock.lock();
 	volatile Task *parent;
 	for(parent = CurrentTask; parent->next != CurrentTask;
 	    parent = parent->next)
@@ -81,12 +85,13 @@ void Scheduler::unschedule() {
 	if(ReadyQueue == CurrentTask) {
 		ReadyQueue = CurrentTask->next;
 	}
+	SchedulerLock.unlock();
 	// immediately jump to the next task
 	yield();
 }
 
 void Scheduler::yield(Task *to) {
-	lock();
+	SchedulerLock.lock();
 	// search for the parent of the to task
 	Task *parent;
 	for(parent = to; parent->next != to; parent = parent->next)
@@ -94,6 +99,7 @@ void Scheduler::yield(Task *to) {
 	parent->next      = to->next;
 	to->next          = CurrentTask->next;
 	CurrentTask->next = to;
+	SchedulerLock.unlock();
 	yield();
 }
 
@@ -127,26 +133,21 @@ extern uptr scheduler_scheduleNext(Register *oldRegisters) {
 }
 }
 
-void Scheduler::scheduleNext(Register *oldRegisters) {
-	scheduler_scheduleNext(oldRegisters);
-}
-
 void Scheduler::init() {
 	Asm::cli();
 	PROMPT_INIT("Scheduler", Brown);
 	PROMPT("Creating kernel task..");
-	Task *t     = Memory::create<Task>();
+	SchedulerLock = SpinLock();
+	Task *t       = Memory::create<Task>();
 	CurrentTask = ReadyQueue = t;
 	t->next                  = t;
 	t->pageDirectory         = Paging::Directory::KernelDirectory;
-	PROMPT("Installing scheduler handler..");
-	IRQ::installHandler(0, scheduleNext);
 	// we don't dump the registers here,
 	// they will be loaded by the irq once
 	// installed
 	PROMPT("Waiting for the task to be scheduled..");
 	Timer::init();
-	asm volatile("sti");
+	Asm::sti();
 	while(CurrentTask->state == Task::State::Scheduled)
 		;
 	PROMPT("Initialization complete!");
