@@ -1,4 +1,6 @@
 #include "string.h"
+#include "stacktrace.h"
+#include "terminal.h"
 
 extern "C" {
 
@@ -89,5 +91,10 @@ int memcmp(const void *source, const void *dest, siz size) {
 		return *source8 - *dest8;
 	}
 	return -(*dest8 - *source8);
+}
+
+void abort() {
+	Terminal::err("abort() called!");
+	Stacktrace::print();
 }
 }

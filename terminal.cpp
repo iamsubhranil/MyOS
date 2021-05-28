@@ -2,6 +2,7 @@
 #include "asm.h"
 #include "kernel_layout.h"
 #include "multiboot.h"
+#include "scopedlock.h"
 #include "string.h"
 #include "vga.h"
 
@@ -14,12 +15,14 @@ VGA::Color Terminal::previousColor =
 Terminal::Mode Terminal::currentMode  = Terminal::Mode::Dec;
 Terminal::Mode Terminal::previousMode = Terminal::Mode::Dec;
 u16 *          Terminal::buffer       = 0;
+SpinLock       Terminal::spinlock     = SpinLock();
 
 void Terminal::init() {
-	row    = 0;
-	column = 0;
-	color  = VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
-	buffer = (u16 *)P2V(0xB8000);
+	spinlock = SpinLock();
+	row      = 0;
+	column   = 0;
+	color    = VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
+	buffer   = (u16 *)P2V(0xB8000);
 	for(u16 y = 0; y < VGA::Height; y++) {
 		for(u16 x = 0; x < VGA::Width; x++) {
 			const u16 index = y * VGA::Width + x;
@@ -72,7 +75,36 @@ void Terminal::moveUpOneRow() {
 }
 
 u32 Terminal::write(const char &c) {
-	PAUSEI();
+	spinlock.lock();
+	switch(c) {
+		case '\n': column = VGA::Width - 1; break;
+		case '\r': column = 0; return 1; // we don't want to adjust anything
+		case '\b': {
+			if(column == 0) {
+				column = VGA::Width - 2;
+				row--;
+			} else
+				column -= 2;
+		} break;
+		case '\t':
+			write_nolock(' ');
+			write_nolock(' ');
+			write_nolock(' ');
+			return write_nolock(' ');
+		default: putEntryAt(c, color, column, row); break;
+	}
+	if(++column == VGA::Width) {
+		column = 0;
+		if(++row == VGA::Height) {
+			// row = 0;
+			moveUpOneRow();
+		}
+	}
+	spinlock.unlock();
+	return 1;
+}
+
+u32 Terminal::write_nolock(const char &c) {
 	switch(c) {
 		case '\n': column = VGA::Width - 1; break;
 		case '\r': column = 0; return 1; // we don't want to adjust anything
@@ -97,12 +129,12 @@ u32 Terminal::write(const char &c) {
 			moveUpOneRow();
 		}
 	}
-	RESUMEI();
 	return 1;
 }
 
 u32 Terminal::writebytes(const char *const &data, siz size) {
-	for(u16 i = 0; i < size; i++) write(data[i]);
+	ScopedLock sl(spinlock);
+	for(u16 i = 0; i < size; i++) write_nolock(data[i]);
 	return size;
 }
 
@@ -200,7 +232,7 @@ u32 Terminal::write(const i64 &value) {
 }
 
 u32 Terminal::write(VGA::Color c) {
-	PAUSEI();
+	ScopedLock sl(spinlock);
 	switch(c) {
 		case VGA::Color::Reset: {
 			setColor(previousColor);
@@ -209,12 +241,11 @@ u32 Terminal::write(VGA::Color c) {
 			setColor(c);
 		} break;
 	}
-	RESUMEI();
 	return 0;
 }
 
 u32 Terminal::write(Terminal::Mode m) {
-	PAUSEI();
+	ScopedLock sl(spinlock);
 	switch(m) {
 		case Terminal::Mode::Reset: {
 			setMode(previousMode);
@@ -223,12 +254,11 @@ u32 Terminal::write(Terminal::Mode m) {
 			setMode(m);
 		} break;
 	}
-	RESUMEI();
 	return 0;
 }
 
 u32 Terminal::write(Terminal::Move m) {
-	PAUSEI();
+	ScopedLock sl(spinlock);
 	switch(m) {
 		case Terminal::Move::Up: {
 			if(row == 0) {
@@ -251,12 +281,11 @@ u32 Terminal::write(Terminal::Move m) {
 			column = (column + 1) % VGA::Width;
 		} break;
 	}
-	RESUMEI();
 	return 0;
 }
 
 u32 Terminal::write(Terminal::Control c) {
-	PAUSEI();
+	ScopedLock sl(spinlock);
 	switch(c) {
 		case Terminal::Control::ClearLine: {
 			for(u32 i = 0; i < VGA::Width; i++) {
@@ -265,6 +294,5 @@ u32 Terminal::write(Terminal::Control c) {
 			}
 		} break;
 	}
-	RESUMEI();
 	return 0;
 }

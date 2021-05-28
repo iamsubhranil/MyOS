@@ -2,6 +2,7 @@
 #include "heap.h"
 #include "kernel_layout.h"
 #include "paging.h"
+#include "string.h"
 
 extern u32 __ld_kernel_end; // defined in linker script
 uptr       Memory::placementAddress = (uptr)&__ld_kernel_end;
@@ -27,4 +28,14 @@ void Memory::free(void *addr) {
 	if(kernelHeap) {
 		kernelHeap->free(addr);
 	}
+}
+
+extern "C" {
+void *malloc(size_t size) {
+	return Memory::alloc(size);
+}
+
+void free(void *addr) {
+	Memory::free(addr);
+}
 }

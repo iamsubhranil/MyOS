@@ -1,6 +1,7 @@
 #pragma once
 
 #include "myos.h"
+#include "spinlock.h"
 #include "vga.h"
 
 #define PROMPT_INIT(name, color)        \
@@ -39,6 +40,8 @@ struct Terminal {
 	static u16  column;
 	static u16 *buffer;
 
+	static SpinLock spinlock;
+
 	static void init();
 
 	static void setColor(VGA::Color color);
@@ -55,6 +58,8 @@ struct Terminal {
 	static u32 writebytes(const char *const &data, siz len);
 	static u32 write(const char *const &data);
 	static u32 write(const char &c);
+	static u32 write_nolock(
+	    const char &c); // writes a single character without using any lock
 	static u32 write(const u64 &value);
 	static u32 write(const u32 &value) {
 		return write((u64)value);

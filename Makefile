@@ -1,6 +1,6 @@
 CXX=i686-elf-g++
 LD=i686-elf-ld
-CXXFLAGS=-Wall -Wextra
+CXXFLAGS=-Wall -Wextra -fno-exceptions -fno-rtti -ffreestanding
 QEMUFLAGS=
 
 # $(wildcard *.cpp /xxx/xxx/*.cpp): get all .cpp files from the current directory and dir "/xxx/xxx/"
@@ -12,7 +12,7 @@ boot: boot.s
 	i686-elf-as boot.s -o boot.o
 
 %.o: %.cpp
-	$(CXX) -c $< -o $@ -ffreestanding $(CXXFLAGS)
+	$(CXX) -c $< -o $@ $(CXXFLAGS)
 
 linker: linker.ld $(OBJS) 
 	$(CXX) -T linker.ld -o myos.bin -ffreestanding $(CXXFLAGS) -nostdlib $(OBJS) boot.o -lgcc
