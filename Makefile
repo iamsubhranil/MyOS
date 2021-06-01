@@ -1,15 +1,15 @@
 CXX=i686-elf-g++
 LD=i686-elf-ld
-CXXFLAGS=-Wall -Wextra -fno-exceptions -fno-rtti -ffreestanding
+CXXFLAGS=-Wall -Wextra -fno-exceptions -fno-rtti -nostdlib -ffreestanding -I.
 QEMUFLAGS=
 
 # $(wildcard *.cpp /xxx/xxx/*.cpp): get all .cpp files from the current directory and dir "/xxx/xxx/"
-SRCS := $(wildcard *.cpp)
+SRCS := $(wildcard *.cpp */*.cpp */*/*.cpp */*/*/*.cpp)
 # $(patsubst %.cpp,%.o,$(SRCS)): substitute all ".cpp" file name strings to ".o" file name strings
 OBJS := $(patsubst %.cpp,%.o,$(SRCS))
 
-boot: boot.s
-	i686-elf-as boot.s -o boot.o
+boot: arch/x86/boot.S
+	$(CXX) $(CXXFLAGS) arch/x86/boot.S -c -o boot.o
 
 %.o: %.cpp
 	$(CXX) -c $< -o $@ $(CXXFLAGS)

@@ -1,17 +1,17 @@
-#include "asm.h"
-#include "gdt.h"
-#include "idt.h"
-#include "io.h"
-#include "irq.h"
-#include "keycodes.h"
-#include "memory.h"
-#include "multiboot.h"
-#include "paging.h"
-#include "scheduler.h"
-#include "syscall.h"
-#include "task.h"
-#include "terminal.h"
-#include "timer.h"
+#include <arch/x86/asm.h>
+#include <arch/x86/gdt.h>
+#include <arch/x86/idt.h>
+#include <arch/x86/irq.h>
+#include <boot/multiboot.h>
+#include <drivers/io.h>
+#include <drivers/keycodes.h>
+#include <drivers/terminal.h>
+#include <drivers/timer.h>
+#include <mem/memory.h>
+#include <mem/paging.h>
+#include <sched/scheduler.h>
+#include <sched/task.h>
+#include <sys/syscall.h>
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */
 #if defined(__linux__)
@@ -146,7 +146,7 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 		Memory::free(c);
 		Terminal::prompt(VGA::Color::Blue, "Kernel", "Releasing the u32..");
 		// Timer::wait(Timer::frequency);
-		// Terminal::prompt(VGA::Color::Blue, "Kernel", "Waited for 1 \
+		// Terminal::prompt(VGA::Color::Blue, "Kernel", "Waited for 1
 		// seconds!");
 		break;
 		// while(1)
