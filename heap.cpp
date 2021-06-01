@@ -1,5 +1,6 @@
 #include "heap.h"
 #include "paging.h"
+#include "scopedlock.h"
 #include "string.h"
 #include "terminal.h"
 
@@ -61,9 +62,12 @@ void Heap::init(siz size) {
 	headerRoot->right          = NULL;
 	headerRoot->previousHeader = NULL;
 	headerRoot->magic          = Header::Magic;
+
+	heapLock = SpinLock();
 }
 
 void *Heap::alloc(siz bytes) {
+	ScopedLock sl(heapLock); // make sure only one thread accesses it
 	if(bytes <= BlockEnd) {
 		// we can do bucket allocation
 		bytes = blockNearest(bytes);
@@ -98,7 +102,12 @@ void *Heap::alloc(siz bytes) {
 		bytes = roundUp8(bytes);
 		// use huge allocators
 		Header *h = findClosestHeader(bytes);
-		h->magic  = Header::Magic | 1;
+		if(!h) {
+			Terminal::err("No free header found to allocate!\n");
+			for(;;)
+				;
+		}
+		h->magic = Header::Magic | 1;
 		// remove it from the tree
 		removeHeader(h);
 		// check if we can break it
@@ -123,6 +132,7 @@ void *Heap::alloc(siz bytes) {
 }
 
 void *Heap::alloc_a(siz bytes) {
+	ScopedLock sl(heapLock); // make sure only one thread accesses it
 	if(bytes <= BlockEnd) {
 		bytes   = blockNearest(bytes);
 		siz cls = getSizeClass(bytes);
@@ -132,7 +142,7 @@ void *Heap::alloc_a(siz bytes) {
 		// a free bucket.
 		Bucket *b = allocBucket(bytes, cls);
 		if(!b) {
-			Terminal::write("No free bucket found to allocate aligned!");
+			Terminal::err("No free bucket found to allocate aligned!\n");
 			for(;;)
 				;
 		}
@@ -141,15 +151,15 @@ void *Heap::alloc_a(siz bytes) {
 		bytes = roundUp8(bytes);
 		// try to find a free header
 		Header *header = findClosestHeader(bytes, true);
+		if(!header) {
+			Terminal::err("No free header found to allocate aligned!\n");
+			for(;;)
+				;
+		}
 		// remove ourselves from the tree first
 		removeHeader(header);
 		// mark it used
 		header->magic |= 1;
-		if(!header) {
-			Terminal::write("No free header found to allocate aligned!");
-			for(;;)
-				;
-		}
 		uptr addrStart = (uptr)header + sizeof(Header);
 		// make the address aligned
 		Paging::alignIfNeeded(addrStart);
@@ -228,6 +238,7 @@ void *Heap::alloc_a(siz bytes) {
 }
 
 void Heap::free(void *mem) {
+	ScopedLock sl(heapLock); // make sure only one thread accesses it
 	if(!mem)
 		return;
 	uptr addr = (uptr)mem;
@@ -264,7 +275,7 @@ void Heap::free(void *mem) {
 		// find the header
 		Header *h = (Header *)((uptr)mem - sizeof(Header));
 		if(h->magic != (Header::Magic | 1)) {
-			Terminal::err("Invalid header magic!");
+			Terminal::err("Invalid header magic!\n");
 			for(;;)
 				;
 		}
@@ -331,7 +342,7 @@ Heap::Bucket *Heap::allocBucket(siz size, siz cls) {
 		b->init(size);
 	} else {
 		if(bucketAllocationCurrent > bucketAllocationEnd) {
-			Terminal::err("No more memory to allocate a bucket!");
+			Terminal::err("No more memory to allocate a bucket!\n");
 			for(;;)
 				;
 		}
@@ -430,6 +441,8 @@ void Heap::removeHeader(Header *h, Header **slot) {
 	} else {
 		*slot = NULL;
 	}
+	// finally, clear the left right pointers of the header
+	h->left = h->right = NULL;
 }
 
 void Heap::Header::ensureMapped(bool full) {

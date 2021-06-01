@@ -62,20 +62,21 @@ struct Task {
 
 	static void setKernelStack(uptr stack_);
 
-	enum State { Scheduled, Ready, Waiting };
+	enum State { New, Scheduled, Ready, Waiting, Unscheduled, Finished };
 
 	static u32 NextPid;
 
 	// properties of a task
-	u32 id; // id of the task
-	// uptr ebp, eip, esp;
+	u32                id; // id of the task
 	Register           regs;
 	Paging::Directory *pageDirectory;
-	Task *             next;
-	State              state;
-	void *             runner; // address of the function
+	Task *prev, *next; // this is used by the scheduler specifically
+	State state;
+	void *stackptr;   // the pointer to the stack
+	void *runner;     // address of the function
+	Task *nextInList; // in its lifetime, a task may be added to several lists,
+	                  // this contains the next task in that list
 
-	static const siz DefaultStackSize =
-	    1024 * 1024 * 4; // let's make it 4KiB for now
+	static const siz DefaultStackSize = 1024 * 4; // let's make it 4KiB for now
 	Task();
 };

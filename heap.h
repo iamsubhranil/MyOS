@@ -1,6 +1,7 @@
 #pragma once
 
 #include "myos.h"
+#include "spinlock.h"
 
 struct Heap {
 
@@ -90,6 +91,9 @@ struct Heap {
 
 	static const siz KHeapStart = 0xD0000000;
 	static const siz KHeapEnd   = 0xDFFFFFFF;
+
+	SpinLock
+	    heapLock; // make sure only one thread accesses alloc/free at a time
 
 	uptr heapStart; // start of the heap
 	uptr heapEnd;   // end of the heap

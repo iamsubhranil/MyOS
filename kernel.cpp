@@ -39,14 +39,10 @@ void writeSomething(u32 id, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g) {
 	for(;;) {
 		res++;
 		if(res % ((id + 1) * 5000000) == 0) {
-			Asm::cli();
 			Terminal::write("Thread: ", id, " yielding..\n");
-			Asm::sti();
 			Scheduler::yield();
-			Asm::cli();
-			Terminal::write("Thread: ", id, " resumed..\n");
-			Terminal::write("Thread: ", id, "\tresult: ", res, "\n");
-			Asm::sti();
+			// Terminal::write("Thread: ", id, " resumed..\n");
+			// Terminal::write("Thread: ", id, "\tresult: ", res, "\n");
 		}
 		// Asm::sti();
 	}
@@ -77,12 +73,22 @@ void loopTask() {
 u32 fib(u32 val) {
 	if(val < 2)
 		return val;
-	return fib(val - 1) + fib(val - 2);
+	// u32          id    = Scheduler::CurrentTask->id;
+	Future<u32> *left  = Scheduler::submit(fib, val - 1);
+	Future<u32> *right = Scheduler::submit(fib, val - 2);
+	// Terminal::write("Thread: ", id, " fib(", val, "): waiting for ", val - 1,
+	//                " & ", val - 2, "\n");
+	u32 res = left->get() + right->get();
+	// Terminal::write("Thread: ", id, " fib(", val, "): returning ", res,
+	// "\n");
+	return res;
 }
 
 void calcFib(u32 id) {
-	u32 res = fib(35);
-	Terminal::write("Thread ", id, ": ", res, "\n");
+	u32 res     = fib(15);
+	u32 finalId = Task::NextPid;
+	Terminal::write("FIB RESULT: Thread ", id, ": ", res,
+	                "\tTasks Created: ", finalId - id, "\n");
 }
 
 void addFibTask() {
@@ -149,7 +155,8 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	Terminal::write("\n");
 	Terminal::write(Terminal::Mode::Dec);
 	Scheduler::submit(finishableTask);
-	addFibTask();
+	// addFibTask();
+	Scheduler::submit(calcFib, (u32)2);
 	writeSomething(0, 1, 2, 3, 4, 5, 6, 7);
 	// asm volatile("1: jmp 1b");
 }

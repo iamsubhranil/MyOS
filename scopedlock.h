@@ -3,19 +3,13 @@
 #include "spinlock.h"
 
 struct ScopedLock {
-	SpinLock s;
+	SpinLock &s;
 
-	ScopedLock() noexcept {
-		s = SpinLock();
+	ScopedLock(SpinLock &l) : s(l) {
 		s.lock();
 	}
 
-	ScopedLock(SpinLock l) noexcept {
-		s = l;
-		s.lock();
-	}
-
-	~ScopedLock() noexcept {
+	~ScopedLock() {
 		s.unlock();
 	}
 };

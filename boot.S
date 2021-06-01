@@ -620,7 +620,12 @@ irq_common_stub:
 
 .global _irq0
 _irq0:
-    cli
+    // we can come here from yield(), which would mean
+    // that the timer interrupts are still enabled,
+    // so, the PIT can issue another interrupt while
+    // this one is active. but since this is registered
+    // as an interrupt gate, cpu should already disable
+    // the interrupts for us.
 	push $0
 	push $32
     push %ds
@@ -647,25 +652,21 @@ _irq0:
     pop %ds
     cmpl $0x5441534b, (%esp) // check if this is a new task switch
     je prepareNewTask
-    add $0x4, %esp // pop error code
-    add $0x4, %esp // pop irq number
-    add $0x4, %esp // skip eip for now
-    add $0x4, %esp // pop %cs, ignore cs for now
-    popf // pop the flags
+    add $0x8, %esp // pop error code and irq number
     // save eax
     push %eax
     mov $0x20, %al // finish the irq
     out %al, $0x20
     // restore eax back
     pop %eax
-    jmp *-0xc(%esp) // jump to the ip
+    iret // pop eip, cs, eflags and return
 
 // prepares the stack for a task to be inited
 prepareNewTask:
     add $0x8, %esp // pop error code and irq number
-    pop %edi   // store eip in edi
-    add $0x4, %esp // pop %cs, ignore cs for now
-    popf // pop the flags, interrupts are enabled
+    pop %edi   // store eip in edi, callee saved
+    pop %ecx // store cs in ecx, caller saved
+    add $0x4, %esp // skip eflags for now, they are gonna be 0x200 anyway
     // now, we're pointing to the location which
     // contains the number of arguments to the
     // initializer routine of this task.
@@ -689,6 +690,8 @@ prepareNewTask:
     add $4, %eax // first arg should be moved here wrt to the original sp
     // save eax
     push %eax
+    // save ecx
+    push %ecx
     // arguments for memmove
     push %ebx // size
     push %edx // source
@@ -700,6 +703,8 @@ prepareNewTask:
     // now arguments of the task are at their positions,
     // so pop the arguments for memove
     add $12, %esp
+    // pop ecx
+    pop %ecx
     // pop the modified sp
     pop %eax
     // set sp to the modified sp
@@ -708,19 +713,22 @@ initTask:
     // push our return address
     push $leaveTask
     // now the stack is ready
-    // now the task will push the base pointer to the stack top
-    // these registers are callee saved, so we can
-    // store our original esp value in any one of them
+    // push eip, cs, eflags in order
+    push $0x200
+    push %ecx
+    push %edi
+    // zero them out
     xor %ebx, %ebx
+    xor %edi, %edi
     // esi stores the original esp, so don't clean it out
-    // edi stores the jump ip, don't clean it either
     // clear out all other registers
     xor %eax, %eax
     xor %ecx, %ecx
     xor %edx, %edx
     mov $0x20, %al // finish the irq
     out %al, $0x20
-    jmp *%edi // jump to the ip
+    xor %eax, %eax
+    iret // restore eip, eflags, cs and jump
 
 .global leaveTask
 leaveTask:

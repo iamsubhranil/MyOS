@@ -12,7 +12,8 @@ FutureBase::FutureBase() {
 void FutureBase::awakeAllNoLock() {
 	isAvailable = true;
 	while(waitingTasks) {
-		Task *nextTask = waitingTasks->next;
+		Task *nextTask           = waitingTasks->nextInList;
+		waitingTasks->nextInList = NULL;
 		Scheduler::appendTask(waitingTasks);
 		waitingTasks = nextTask;
 	}
@@ -24,12 +25,11 @@ void FutureBase::waitTillAvailable() {
 		Task * s         = (Task *)Scheduler::getCurrentTask();
 		Task **insertPos = &waitingTasks;
 		while(*insertPos) {
-			insertPos = &(*insertPos)->next;
+			insertPos = &(*insertPos)->nextInList;
 		}
 		*insertPos = (Task *)s;
-		lock.unlock();
-		Scheduler::unschedule(); // the task will return from here,
-		                         // already unlocked
+		Scheduler::unschedule(lock); // the task will return from here,
+		                             // already unlocked
 	} else {
 		lock.unlock();
 	}

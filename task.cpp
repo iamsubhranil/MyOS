@@ -40,9 +40,11 @@ void Task::setKernelStack(uptr stack_) {
 u32 Task::NextPid = 0;
 
 Task::Task() {
-	id    = NextPid++;
-	next  = NULL;
-	state = State::Scheduled;
+	id   = NextPid++;
+	prev = next = NULL;
+	nextInList  = NULL;
+	state       = State::New;
 	memset(&regs, 0, sizeof(Register));
 	regs.fs = regs.es = regs.ds = regs.gs = 0x10;
+	regs.cs                               = 0x08;
 }

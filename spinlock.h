@@ -2,8 +2,11 @@
 
 #include "myos.h"
 
+struct Task;
+
 struct SpinLock {
-	volatile u32 lk;
+	volatile u8    lk;
+	volatile Task *acquired;
 
 	SpinLock() {
 		lk = 0;
@@ -11,11 +14,15 @@ struct SpinLock {
 
 	void lock() {
 		while(!__sync_bool_compare_and_swap(&lk, 0, 1)) __sync_synchronize();
+		assignAcquired();
 	}
+
+	void assignAcquired();
 
 	void unlock() {
 		__sync_synchronize();
-		lk = 0; // aligned writes are atomic
+		acquired = NULL;
+		lk       = 0; // aligned writes are atomic
 	}
 
 	bool isLocked() {

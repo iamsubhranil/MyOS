@@ -4,6 +4,7 @@
 #include "future.h"
 #include "memory.h"
 #include "scopedlock.h"
+#include "semaphore.h"
 #include "spinlock.h"
 #include "task.h"
 
@@ -12,7 +13,9 @@ struct Scheduler {
 	static volatile Task *ReadyQueue;
 	static volatile Task *WaitingQueue;
 	static volatile Task *CurrentTask;
+	static volatile Task *FinishedTasks;
 	static SpinLock       SchedulerLock;
+	static Semaphore      CleanupSemaphore;
 
 	// this will schedule the task, and block till the task
 	// is finished, and then return the result
@@ -51,13 +54,18 @@ struct Scheduler {
 		return result;
 	}
 
+	// counts the recursion in suspend/resume
+	static u32 RecursiveSuspendCounter;
 	// temporarily suspends the task switch
 	static void suspend() {
 		Asm::cli();
+		RecursiveSuspendCounter++;
 	}
 	// resumes task switch if it was suspended
 	static void resume() {
-		Asm::sti();
+		RecursiveSuspendCounter--;
+		if(RecursiveSuspendCounter == 0)
+			Asm::sti();
 	}
 
 	// prepares a new task to be added the ready queue
@@ -74,12 +82,24 @@ struct Scheduler {
 	// it does not acquire a lock. that is upto the caller.
 	static void prepare(Task *t, void *future_addr, void *future_set,
 	                    u32 numargs);
-	// appends a task in the ready queue
+	// appends a new task in the ready queue.
+	// if the task state of the task is Unscheduled,
+	// it just marks it as scheduled and returns
 	static void appendTask(Task *t);
 	// removes the current task from ready queue,
 	// and hopefully, sometime in the future,
-	// releases its resources
-	static void unschedule();
+	// releases its resources.
+	// if finished is true, this will mark the task
+	// as Finished, and its resources will be
+	// released sometime in the future.
+	static void unschedule(bool finished = false);
+	// releases the lock before calling yield
+	static void unschedule(SpinLock &lock, bool finished = false);
+	// core implementation of unscheduler
+	static void unschedule_(bool      finished = false,
+	                        SpinLock &lock     = Scheduler::SchedulerLock,
+	                        bool      unlock   = false);
+	static void finish();
 
 	// will instruct the scheduler to move to the next task,
 	// saving the state of the current task.
@@ -98,6 +118,9 @@ struct Scheduler {
 	static volatile Task *getCurrentTask() {
 		return CurrentTask;
 	}
+
+	// cleans up resources used by finished tasks
+	static void cleanupTask();
 
 	static void init();
 };

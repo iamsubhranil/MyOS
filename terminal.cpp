@@ -75,7 +75,7 @@ void Terminal::moveUpOneRow() {
 }
 
 u32 Terminal::write(const char &c) {
-	spinlock.lock();
+	ScopedLock sl(spinlock);
 	switch(c) {
 		case '\n': column = VGA::Width - 1; break;
 		case '\r': column = 0; return 1; // we don't want to adjust anything
@@ -100,7 +100,6 @@ u32 Terminal::write(const char &c) {
 			moveUpOneRow();
 		}
 	}
-	spinlock.unlock();
 	return 1;
 }
 
@@ -116,10 +115,10 @@ u32 Terminal::write_nolock(const char &c) {
 				column -= 2;
 		} break;
 		case '\t':
-			write(' ');
-			write(' ');
-			write(' ');
-			return write(' ');
+			write_nolock(' ');
+			write_nolock(' ');
+			write_nolock(' ');
+			return write_nolock(' ');
 		default: putEntryAt(c, color, column, row); break;
 	}
 	if(++column == VGA::Width) {
