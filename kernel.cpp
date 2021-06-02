@@ -2,6 +2,7 @@
 #include <arch/x86/gdt.h>
 #include <arch/x86/idt.h>
 #include <arch/x86/irq.h>
+#include <arch/x86/kernel_layout.h>
 #include <boot/multiboot.h>
 #include <drivers/io.h>
 #include <drivers/keycodes.h>
@@ -113,7 +114,8 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	(void)useless0;
 	(void)useless1;
 
-	// void kernelMain() {
+	Multiboot::VbeInfo *vbe = (Multiboot::VbeInfo *)P2V(mboot->vbe_mode_info);
+	Terminal::CurrentOutput = Terminal::Output::VGA;
 	Terminal::init();
 	mboot->dump();
 	// reinit paging

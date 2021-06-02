@@ -12,6 +12,8 @@
 
 struct Terminal {
 
+	enum class Output { Serial, VGA };
+
 	enum class Mode {
 		Dec,
 		Hex,
@@ -30,8 +32,11 @@ struct Terminal {
 	}; // does not overwrite, just moves the cursor
 	enum class Control { ClearLine };
 
-	static Mode currentMode;
-	static Mode previousMode;
+	static Output CurrentOutput;
+	static bool   SerialInited;
+	static bool   VGAInited;
+	static Mode   currentMode;
+	static Mode   previousMode;
 
 	static VGA::Color color;
 	static VGA::Color previousColor;
@@ -42,6 +47,9 @@ struct Terminal {
 
 	static SpinLock spinlock;
 
+	// initSerial and initVga do not acquire the lock
+	static void initSerial();
+	static void initVga();
 	static void init();
 
 	static void setColor(VGA::Color color);
@@ -89,6 +97,7 @@ struct Terminal {
 	static u32 write(Move m);
 	static u32 write(Control c);
 	static u32 write(VGA::Color c);
+	static u32 write(Output o);
 
 	template <size_t N> u32 write(const char (&val)[N]) {
 		return writebytes(val, N);

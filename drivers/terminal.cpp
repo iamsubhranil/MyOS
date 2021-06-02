@@ -1,4 +1,5 @@
 #include <arch/x86/kernel_layout.h>
+#include <drivers/serial.h>
 #include <drivers/terminal.h>
 #include <drivers/vga.h>
 #include <sched/scopedlock.h>
@@ -10,22 +11,40 @@ VGA::Color Terminal::color =
     VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
 VGA::Color Terminal::previousColor =
     VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
-Terminal::Mode Terminal::currentMode  = Terminal::Mode::Dec;
-Terminal::Mode Terminal::previousMode = Terminal::Mode::Dec;
-u16 *          Terminal::buffer       = 0;
-SpinLock       Terminal::spinlock     = SpinLock();
+Terminal::Mode   Terminal::currentMode  = Terminal::Mode::Dec;
+Terminal::Mode   Terminal::previousMode = Terminal::Mode::Dec;
+u16 *            Terminal::buffer       = 0;
+SpinLock         Terminal::spinlock     = SpinLock();
+Terminal::Output Terminal::CurrentOutput =
+    Terminal::Output::Serial; // default output is serial
+bool Terminal::SerialInited = false;
+bool Terminal::VGAInited    = false;
 
-void Terminal::init() {
-	spinlock = SpinLock();
-	row      = 0;
-	column   = 0;
-	color    = VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
-	buffer   = (u16 *)P2V(0xB8000);
+void Terminal::initVga() {
+	row    = 0;
+	column = 0;
+	color  = VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
+	buffer = (u16 *)P2V(0xB8000);
 	for(u16 y = 0; y < VGA::Height; y++) {
 		for(u16 x = 0; x < VGA::Width; x++) {
 			const u16 index = y * VGA::Width + x;
 			buffer[index]   = VGA::entry(' ', color);
 		}
+	}
+	VGAInited = true;
+}
+
+void Terminal::initSerial() {
+	Serial::init();
+	SerialInited = true;
+}
+
+void Terminal::init() {
+	spinlock = SpinLock();
+	ScopedLock sl(spinlock);
+	switch(CurrentOutput) {
+		case Output::Serial: initSerial(); break;
+		case Output::VGA: initVga(); break;
 	}
 }
 
@@ -40,13 +59,25 @@ void Terminal::setMode(Terminal::Mode c) {
 }
 
 void Terminal::putEntryAt(u8 c, VGA::Color color, u16 x, u16 y) {
-	const u16 index = y * VGA::Width + x;
-	buffer[index]   = VGA::entry(c, color);
+	switch(CurrentOutput) {
+		case Output::Serial: // serial output just prints and does nothing else
+			Serial::write(c);
+			break;
+		case Output::VGA:
+			const u16 index = y * VGA::Width + x;
+			buffer[index]   = VGA::entry(c, color);
+			break;
+	}
 }
 
 void Terminal::putEntryAt(u16 entry, u16 x, u16 y) {
-	const u16 index = y * VGA::Width + x;
-	buffer[index]   = entry;
+	switch(CurrentOutput) {
+		case Output::Serial: Serial::write(entry & 0xFF); break;
+		case Output::VGA:
+			const u16 index = y * VGA::Width + x;
+			buffer[index]   = entry;
+			break;
+	}
 }
 
 u16 Terminal::getEntryFrom(u16 x, u16 y) {
@@ -54,6 +85,10 @@ u16 Terminal::getEntryFrom(u16 x, u16 y) {
 }
 
 void Terminal::moveUpOneRow() {
+	// if current mode is serial, we can't move up one row
+	if(CurrentOutput == Output::Serial)
+		return;
+	// VGA output, so do everything else
 	u16 j = 1, i = 0;
 	while(j < VGA::Height) {
 		i = 0;
@@ -74,34 +109,16 @@ void Terminal::moveUpOneRow() {
 
 u32 Terminal::write(const char &c) {
 	ScopedLock sl(spinlock);
-	switch(c) {
-		case '\n': column = VGA::Width - 1; break;
-		case '\r': column = 0; return 1; // we don't want to adjust anything
-		case '\b': {
-			if(column == 0) {
-				column = VGA::Width - 2;
-				row--;
-			} else
-				column -= 2;
-		} break;
-		case '\t':
-			write_nolock(' ');
-			write_nolock(' ');
-			write_nolock(' ');
-			return write_nolock(' ');
-		default: putEntryAt(c, color, column, row); break;
-	}
-	if(++column == VGA::Width) {
-		column = 0;
-		if(++row == VGA::Height) {
-			// row = 0;
-			moveUpOneRow();
-		}
-	}
-	return 1;
+	return write_nolock(c);
 }
 
 u32 Terminal::write_nolock(const char &c) {
+	// if we are writing to serial, we'll directly output the char
+	if(CurrentOutput == Output::Serial) {
+		Serial::write(c);
+		return 1;
+	}
+	// otherwise, we need to manipulate the screen space ourselves
 	switch(c) {
 		case '\n': column = VGA::Width - 1; break;
 		case '\r': column = 0; return 1; // we don't want to adjust anything
@@ -290,6 +307,22 @@ u32 Terminal::write(Terminal::Control c) {
 				column = 0;
 			}
 		} break;
+	}
+	return 0;
+}
+
+u32 Terminal::write(Terminal::Output o) {
+	ScopedLock sl(spinlock);
+	CurrentOutput = o;
+	switch(o) {
+		case Output::Serial:
+			if(!SerialInited)
+				initSerial();
+			break;
+		case Output::VGA:
+			if(!VGAInited)
+				initVga();
+			break;
 	}
 	return 0;
 }
