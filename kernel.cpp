@@ -114,9 +114,12 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	(void)useless0;
 	(void)useless1;
 
-	Multiboot::VbeInfo *vbe = (Multiboot::VbeInfo *)P2V(mboot->vbe_mode_info);
-	Terminal::CurrentOutput = Terminal::Output::VGA;
-	Terminal::init();
+	Multiboot::VbeModeInfo *vbem =
+	    (Multiboot::VbeModeInfo *)P2V(mboot->vbe_mode_info);
+	Multiboot::VbeControlInfo *vbec =
+	    (Multiboot::VbeControlInfo *)P2V(mboot->vbe_control_info);
+	// Terminal::CurrentOutput = Terminal::Output::VGA;
+	Terminal::init(mboot);
 	mboot->dump();
 	// reinit paging
 	Paging::init(mboot);
@@ -132,23 +135,31 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	// Task::init();
 	// Syscall::init();
 	// Task::switchToUserMode(esp);
+	Terminal::write("\n\n\t\t\t");
+	const char *text = "VGA BAAYYYBYYYYYYY!";
+	for(siz i = 1; *text; i = (i + 1) % Terminal::Color::LightGrey, text++) {
+		Terminal::write((Terminal::Color)i, *text, Terminal::Color::Reset);
+	};
+	Terminal::write("\n\n\n");
 	while(1) {
 		u32 *a = (u32 *)Memory::alloc(sizeof(u32));
-		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
+		Terminal::prompt(Terminal::Color::Blue, "Kernel", "u32 allocated at ",
 		                 Terminal::Mode::HexOnce, (void *)a, "..");
 		u32 *b = (u32 *)Memory::alloc(sizeof(u32));
-		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
+		Terminal::prompt(Terminal::Color::Blue, "Kernel", "u32 allocated at ",
 		                 Terminal::Mode::HexOnce, (void *)b, "..");
-		Terminal::prompt(VGA::Color::Blue, "Kernel", "Releasing the u32s..");
+		Terminal::prompt(Terminal::Color::Blue, "Kernel",
+		                 "Releasing the u32s..");
 		Memory::free(a);
 		Memory::free(b);
 		u32 *c = (u32 *)Memory::alloc(sizeof(u32));
-		Terminal::prompt(VGA::Color::Blue, "Kernel", "u32 allocated at ",
+		Terminal::prompt(Terminal::Color::Blue, "Kernel", "u32 allocated at ",
 		                 Terminal::Mode::HexOnce, (void *)c, "..");
 		Memory::free(c);
-		Terminal::prompt(VGA::Color::Blue, "Kernel", "Releasing the u32..");
+		Terminal::prompt(Terminal::Color::Blue, "Kernel",
+		                 "Releasing the u32..");
 		// Timer::wait(Timer::frequency);
-		// Terminal::prompt(VGA::Color::Blue, "Kernel", "Waited for 1
+		// Terminal::prompt(Terminal::Color::Blue, "Kernel", "Waited for 1
 		// seconds!");
 		break;
 		// while(1)

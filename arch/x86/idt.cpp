@@ -61,17 +61,16 @@ void IDT::setGate(u8 num, uptr base, u16 sel, u8 flags) {
 
 /* Installs the IDT */
 void IDT::init() {
-	Terminal::info("Setting up IDT..");
+	PROMPT_INIT("IDT", Orange);
 
-	Terminal::prompt(VGA::Color::Brown, "IDT",
-	                 "Initializing interrupt table vector..");
+	PROMPT("Initializing interrupt table vector..");
 	/* Sets the special IDT pointer up, just like in 'gdt.c' */
 	__idtptr.limit = sizeof(IDT::entries) - 1;
 	__idtptr.base  = (uptr)entries;
 
 	/* IDT is already cleared out to all 0's */
 
-	Terminal::prompt(VGA::Color::Brown, "IDT", "Setting up interrupt hooks..");
+	PROMPT("Setting up interrupt hooks..");
 	/*  Add any new ISRs to the IDT here using IDT::setGate */
 	/*  We set the access
 	 *  flags to 0x8E. This means that the entry is present, is
@@ -112,7 +111,7 @@ void IDT::init() {
 	setGate(31, (uptr)_isr31, 0x08, 0x8E);
 	setGate(Syscall::InterruptNumber, (uptr)_isr_syscall, 0x08, 0x8E);
 
-	Terminal::prompt(VGA::Color::Brown, "IDT", "Installing changes..");
+	PROMPT("Installing changes..");
 	/* Points the processor's internal register to the new IDT */
 	Asm::lidt(__idtptr);
 	Terminal::done("IDT is set up successfully!");

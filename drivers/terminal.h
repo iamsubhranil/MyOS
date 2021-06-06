@@ -4,15 +4,40 @@
 #include <sched/spinlock.h>
 #include <sys/myos.h>
 
-#define PROMPT_INIT(name, color)        \
-	const char *__prompt_header = name; \
-	VGA::Color  __prompt_color  = VGA::Color::color;
+#define PROMPT_INIT(name, color)            \
+	const char *    __prompt_header = name; \
+	Terminal::Color __prompt_color  = Terminal::Color::color;
 #define PROMPT(...) \
 	Terminal::prompt(__prompt_color, __prompt_header, __VA_ARGS__);
 
 struct Terminal {
 
 	enum class Output { Serial, VGA };
+
+	enum Color {
+		Black = 0,
+		Red,
+		Green,
+		Yellow,
+		Blue,
+		Magenta,
+		Cyan,
+		White,
+		LightBlack,
+		LightRed,
+		LightGreen,
+		LightYellow,
+		LightBlue,
+		LightMagenta,
+		LightCyan,
+		LightWhite,
+		// these are not supported by ascii
+		Orange,
+		Gray,
+		LightOrange,
+		LightGrey,
+		Reset,
+	};
 
 	enum class Mode {
 		Dec,
@@ -38,25 +63,27 @@ struct Terminal {
 	static Mode   currentMode;
 	static Mode   previousMode;
 
-	static VGA::Color color;
-	static VGA::Color previousColor;
+	// only foreground colors
+	static Color color;
+	static Color previousColor;
 
 	static u16  row;
 	static u16  column;
 	static u16 *buffer;
+	static u16  vgaLineWidth;  // number of characters per line in a row
+	static u16  vgaLineHeight; // number of rows in a screen
 
 	static SpinLock spinlock;
 
 	// initSerial and initVga do not acquire the lock
 	static void initSerial();
-	static void initVga();
-	static void init();
+	static void initVga(Multiboot *m);
+	static void init(Multiboot *m);
 
-	static void setColor(VGA::Color color);
+	static void setColor(Color color);
 	static void setMode(Mode m);
-	static void putEntryAt(u8 c, VGA::Color color, u16 x, u16 y);
+	static void putEntryAt(u8 c, Color color, u16 x, u16 y);
 	static void putEntryAt(u16 entry, u16 x, u16 y);
-	static u16  getEntryFrom(u16 x, u16 y);
 	static void moveUpOneRow();
 
 	static u32 write_hex(const u64 &value);
@@ -96,8 +123,12 @@ struct Terminal {
 	static u32 write(Mode m);
 	static u32 write(Move m);
 	static u32 write(Control c);
-	static u32 write(VGA::Color c);
+	static u32 write(Color c);
 	static u32 write(Output o);
+
+	// color conversion
+	static void       writeSerialColor(Color c);
+	static VGA::Color toVGAColor(Color c);
 
 	template <size_t N> u32 write(const char (&val)[N]) {
 		return writebytes(val, N);
@@ -125,34 +156,33 @@ struct Terminal {
 		return write_helper(0, arg, args...);
 	}
 
-	static void prompt_internal(VGA::Color foreground, const char *prompt) {
-		write("[ ", foreground, prompt, VGA::Color::Reset, " ] ");
+	static void prompt_internal(Color foreground, const char *prompt) {
+		write("[ ", foreground, prompt, Color::Reset, " ] ");
 	}
 
 	template <typename... T>
-	static void prompt(VGA::Color foreground, const char *prompt,
-	                   const T &...args) {
+	static void prompt(Color foreground, const char *prompt, const T &...args) {
 		prompt_internal(foreground, prompt);
 		write(args..., '\n');
 	}
 
 	template <typename... T> static void info(const T &...args) {
-		prompt(VGA::Color::Cyan, "Info", args...);
+		prompt(Color::Cyan, "Info", args...);
 	}
 
 	template <typename... T> static void warn(const T &...args) {
-		prompt(VGA::Color::Magenta, "Warn", args...);
+		prompt(Color::Magenta, "Warn", args...);
 	}
 
 	template <typename... T> static void done(const T &...args) {
-		prompt(VGA::Color::Green, "Done", args...);
+		prompt(Color::Green, "Done", args...);
 	}
 
 	template <typename... T> static void fail(const T &...args) {
-		prompt(VGA::Color::Red, "Fail", args...);
+		prompt(Color::Red, "Fail", args...);
 	}
 
 	template <typename... T> static void err(const T &...args) {
-		prompt(VGA::Color::Red, "ERR ", args...);
+		prompt(Color::Red, "ERR ", args...);
 	}
 };

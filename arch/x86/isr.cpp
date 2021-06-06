@@ -84,16 +84,16 @@ void _fault_handler(Register *registers) {
 		 *  In this tutorial, we will simply halt the system using an
 		 *  infinite loop */
 		if(ISR::interruptMessages[registers->int_no]) {
-			Terminal::prompt(VGA::Color::Magenta, "INTRHW",
+			Terminal::prompt(Terminal::Color::Magenta, "INTRHW",
 			                 ISR::interruptMessages[registers->int_no]);
 		} else {
-			Terminal::prompt(VGA::Color::Magenta, "INTRHW",
+			Terminal::prompt(Terminal::Color::Magenta, "INTRHW",
 			                 Terminal::Mode::HexOnce, registers->int_no);
 		}
 		if(ISR::routines[registers->int_no]) {
 			ISR::routines[registers->int_no](registers);
 		} else {
-			Terminal::prompt(VGA::Color::Magenta, "INTRHW",
+			Terminal::prompt(Terminal::Color::Magenta, "INTRHW",
 			                 "No interrupt handler found! Looping!");
 			for(;;)
 				;

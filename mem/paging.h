@@ -1,8 +1,8 @@
 #pragma once
 
 #include <boot/multiboot.h>
-#include <sys/myos.h>
 #include <misc/option.h>
+#include <sys/myos.h>
 #include <sys/system.h>
 
 struct Paging {
@@ -65,6 +65,9 @@ struct Paging {
 		// from the beginning.
 		// returns the allocated frame
 		uptr alloc(bool isKernel, bool isWritable, uptr lastFrame = 0);
+		// this sets up a frame at the specified physical address,
+		// does not toggle any Frame bit
+		uptr allocDMA(bool isKernel, bool isWritable, uptr physAddr);
 		void free();
 
 		u32 dump() const;

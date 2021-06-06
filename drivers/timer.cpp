@@ -8,8 +8,8 @@ volatile u32 Timer::ticks     = 0;
 u32          Timer::frequency = 18;
 
 void Timer::setFrequency(u16 hz) {
-	Terminal::prompt(VGA::Color::Brown, "PIT", "Setting frequency to ", hz,
-	                 "..");
+	Terminal::prompt(Terminal::Color::Orange, "PIT", "Setting frequency to ",
+	                 hz, "..");
 	u16 divisor = 1193180 / hz;     /* Calculate our divisor */
 	IO::outb(0x43, 0x36);           /* Set our command byte 0x36 */
 	IO::outb(0x40, divisor & 0xFF); /* Set low byte of divisor */
@@ -26,12 +26,13 @@ void Timer::handler(Register *r) {
 	(void)r;
 	/* Increment our 'tick count' */
 	ticks++;
-	// Terminal::prompt(VGA::Color::Blue, "Timer", "Tick..");
+	// Terminal::prompt(Terminal::Color::Blue, "Timer", "Tick..");
 
 	/* Every 'frequency' clocks (approximately 1 second), we will
 	 *  display a message on the screen */
 	// if(ticks % frequency == 0) {
-	//	Terminal::prompt(VGA::Color::Blue, "Timer", "One second is done..");
+	//	Terminal::prompt(Terminal::Color::Blue, "Timer", "One second is
+	//done..");
 	// }
 }
 
@@ -46,7 +47,7 @@ void Timer::wait(u32 t) {
 void Timer::init() {
 	Terminal::info("Setting up PIT..");
 	/* Installs 'timer_handler' to IRQ0 */
-	Terminal::prompt(VGA::Color::Brown, "PIT", "Installing handler..");
+	Terminal::prompt(Terminal::Color::Orange, "PIT", "Installing handler..");
 	IRQ::installHandler(0, Timer::handler);
 	u32 freq = 100;
 	Timer::setFrequency(freq);

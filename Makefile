@@ -1,7 +1,7 @@
 CXX=i686-elf-g++
 LD=i686-elf-ld
-CXXFLAGS=-Wall -Wextra -fno-exceptions -fno-rtti -nostdlib -ffreestanding -I.
-QEMUFLAGS=-serial stdio
+CXXFLAGS=-Wall -Wextra -fno-exceptions -fno-rtti -nostdlib -ffreestanding -I. -std=c++17
+QEMUFLAGS=
 
 # $(wildcard *.cpp /xxx/xxx/*.cpp): get all .cpp files from the current directory and dir "/xxx/xxx/"
 SRCS := $(wildcard *.cpp */*.cpp */*/*.cpp */*/*/*.cpp)
@@ -48,10 +48,11 @@ include .depend
 
 all: release
 release: CXXFLAGS += -O2
+release: QEMUFLAGS = -serial stdio
 release: boot linker start
 
 debug: CXXFLAGS += -O0 -g3 -fno-omit-frame-pointer
-debug: QEMUFLAGS = -no-shutdown -no-reboot -serial mon:stdio
+debug: QEMUFLAGS += -no-shutdown -no-reboot -serial mon:stdio
 debug: boot linker start
 
 debug_iso: CXXFLAGS += -O0 -g3 -fno-omit-frame-pointer

@@ -171,7 +171,7 @@ void Scheduler::cleanupTask() {
 
 void Scheduler::init() {
 	Asm::cli();
-	PROMPT_INIT("Scheduler", Brown);
+	PROMPT_INIT("Scheduler", Orange);
 	PROMPT("Creating kernel task..");
 	SchedulerLock    = SpinLock();
 	CleanupSemaphore = Semaphore(0);

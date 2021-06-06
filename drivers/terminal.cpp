@@ -1,37 +1,35 @@
 #include <arch/x86/kernel_layout.h>
+#include <drivers/font.h>
 #include <drivers/serial.h>
 #include <drivers/terminal.h>
 #include <drivers/vga.h>
 #include <sched/scopedlock.h>
 #include <sys/string.h>
 
-u16        Terminal::row    = 0;
-u16        Terminal::column = 0;
-VGA::Color Terminal::color =
-    VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
-VGA::Color Terminal::previousColor =
-    VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
-Terminal::Mode   Terminal::currentMode  = Terminal::Mode::Dec;
-Terminal::Mode   Terminal::previousMode = Terminal::Mode::Dec;
-u16 *            Terminal::buffer       = 0;
-SpinLock         Terminal::spinlock     = SpinLock();
+u16              Terminal::row           = 0;
+u16              Terminal::column        = 0;
+u16              Terminal::vgaLineWidth  = 0;
+u16              Terminal::vgaLineHeight = 0;
+Terminal::Color  Terminal::color         = Terminal::Color::White;
+Terminal::Color  Terminal::previousColor = Terminal::Color::White;
+Terminal::Mode   Terminal::currentMode   = Terminal::Mode::Dec;
+Terminal::Mode   Terminal::previousMode  = Terminal::Mode::Dec;
+u16 *            Terminal::buffer        = 0;
+SpinLock         Terminal::spinlock      = SpinLock();
 Terminal::Output Terminal::CurrentOutput =
     Terminal::Output::Serial; // default output is serial
 bool Terminal::SerialInited = false;
 bool Terminal::VGAInited    = false;
 
-void Terminal::initVga() {
-	row    = 0;
-	column = 0;
-	color  = VGA::color(VGA::Color::LightGrey, VGA::Color::Black);
-	buffer = (u16 *)P2V(0xB8000);
-	for(u16 y = 0; y < VGA::Height; y++) {
-		for(u16 x = 0; x < VGA::Width; x++) {
-			const u16 index = y * VGA::Width + x;
-			buffer[index]   = VGA::entry(' ', color);
-		}
-	}
-	VGAInited = true;
+void Terminal::initVga(Multiboot *m) {
+	// map the vbe framebuffer
+	Multiboot::VbeModeInfo *vbe =
+	    (Multiboot::VbeModeInfo *)P2V(m->vbe_mode_info);
+	VGA::init(vbe);
+	Font::init();
+	vgaLineWidth  = Font::charactersPerLine();
+	vgaLineHeight = Font::linesPerFrame();
+	VGAInited     = true;
 }
 
 void Terminal::initSerial() {
@@ -39,16 +37,18 @@ void Terminal::initSerial() {
 	SerialInited = true;
 }
 
-void Terminal::init() {
-	spinlock = SpinLock();
+void Terminal::init(Multiboot *m) {
+	// if none of the modes have been inited, init the spinlock
+	if(!SerialInited && !VGAInited)
+		spinlock = SpinLock();
 	ScopedLock sl(spinlock);
 	switch(CurrentOutput) {
 		case Output::Serial: initSerial(); break;
-		case Output::VGA: initVga(); break;
+		case Output::VGA: initVga(m); break;
 	}
 }
 
-void Terminal::setColor(VGA::Color c) {
+void Terminal::setColor(Color c) {
 	previousColor = color;
 	color         = c;
 }
@@ -58,53 +58,36 @@ void Terminal::setMode(Terminal::Mode c) {
 	currentMode  = c;
 }
 
-void Terminal::putEntryAt(u8 c, VGA::Color color, u16 x, u16 y) {
+void Terminal::writeSerialColor(Color c) {
+	const char *col = Serial::AsciiColors[c];
+	while(*col++) Serial::write(*(col - 1));
+}
+
+void Terminal::putEntryAt(u8 c, Color color, u16 x, u16 y) {
 	switch(CurrentOutput) {
 		case Output::Serial: // serial output just prints and does nothing else
+			writeSerialColor(color);
 			Serial::write(c);
 			break;
-		case Output::VGA:
-			const u16 index = y * VGA::Width + x;
-			buffer[index]   = VGA::entry(c, color);
-			break;
+		case Output::VGA: {
+			u16 starty = y * Font::CurrentFont.asciiHeight;
+			u16 startx = x * Font::CurrentFont.maxWidth;
+			Font::Renderer::render(VGA::Point(startx, starty), c,
+			                       VGA::Colors[color]);
+		} break;
 	}
 }
 
 void Terminal::putEntryAt(u16 entry, u16 x, u16 y) {
-	switch(CurrentOutput) {
-		case Output::Serial: Serial::write(entry & 0xFF); break;
-		case Output::VGA:
-			const u16 index = y * VGA::Width + x;
-			buffer[index]   = entry;
-			break;
-	}
-}
-
-u16 Terminal::getEntryFrom(u16 x, u16 y) {
-	return buffer[(y * VGA::Width) + x];
+	putEntryAt(entry, color, x, y);
 }
 
 void Terminal::moveUpOneRow() {
 	// if current mode is serial, we can't move up one row
 	if(CurrentOutput == Output::Serial)
 		return;
-	// VGA output, so do everything else
-	u16 j = 1, i = 0;
-	while(j < VGA::Height) {
-		i = 0;
-		while(i < VGA::Width) {
-			putEntryAt(getEntryFrom(i, j), i, (j - 1));
-			i++;
-		}
-		j++;
-	}
-	i = 0;
-	while(i < VGA::Width) {
-		putEntryAt(' ', color, i, VGA::Height - 1);
-		i++;
-	}
-	row    = VGA::Height - 1;
-	column = 0;
+	// VGA output, so move the first line to 0
+	VGA::scrollForward(VGA::Point(0, Font::CurrentFont.asciiHeight));
 }
 
 u32 Terminal::write(const char &c) {
@@ -120,11 +103,11 @@ u32 Terminal::write_nolock(const char &c) {
 	}
 	// otherwise, we need to manipulate the screen space ourselves
 	switch(c) {
-		case '\n': column = VGA::Width - 1; break;
+		case '\n': column = Font::charactersPerLine() - 1; break;
 		case '\r': column = 0; return 1; // we don't want to adjust anything
 		case '\b': {
 			if(column == 0) {
-				column = VGA::Width - 2;
+				column = vgaLineWidth - 2;
 				row--;
 			} else
 				column -= 2;
@@ -136,9 +119,9 @@ u32 Terminal::write_nolock(const char &c) {
 			return write_nolock(' ');
 		default: putEntryAt(c, color, column, row); break;
 	}
-	if(++column == VGA::Width) {
+	if(++column == vgaLineWidth) {
 		column = 0;
-		if(++row == VGA::Height) {
+		if(++row == vgaLineHeight) {
 			// row = 0;
 			moveUpOneRow();
 		}
@@ -245,10 +228,10 @@ u32 Terminal::write(const i64 &value) {
 	return write((u64)bak) + add;
 }
 
-u32 Terminal::write(VGA::Color c) {
+u32 Terminal::write(Color c) {
 	ScopedLock sl(spinlock);
 	switch(c) {
-		case VGA::Color::Reset: {
+		case Color::Reset: {
 			setColor(previousColor);
 		} break;
 		default: {
@@ -276,23 +259,23 @@ u32 Terminal::write(Terminal::Move m) {
 	switch(m) {
 		case Terminal::Move::Up: {
 			if(row == 0) {
-				row = VGA::Height - 1;
+				row = vgaLineHeight - 1;
 			} else {
 				row--;
 			}
 		} break;
 		case Terminal::Move::Down: {
-			row = (row + 1) % VGA::Height;
+			row = (row + 1) % vgaLineHeight;
 		} break;
 		case Terminal::Move::Left: {
 			if(column == 0) {
-				column = VGA::Width - 1;
+				column = vgaLineWidth - 1;
 			} else {
 				column--;
 			}
 		} break;
 		case Terminal::Move::Right: {
-			column = (column + 1) % VGA::Width;
+			column = (column + 1) % vgaLineWidth;
 		} break;
 	}
 	return 0;
@@ -302,7 +285,7 @@ u32 Terminal::write(Terminal::Control c) {
 	ScopedLock sl(spinlock);
 	switch(c) {
 		case Terminal::Control::ClearLine: {
-			for(u32 i = 0; i < VGA::Width; i++) {
+			for(u32 i = 0; i < vgaLineWidth; i++) {
 				putEntryAt(' ', row, i);
 				column = 0;
 			}
@@ -314,15 +297,5 @@ u32 Terminal::write(Terminal::Control c) {
 u32 Terminal::write(Terminal::Output o) {
 	ScopedLock sl(spinlock);
 	CurrentOutput = o;
-	switch(o) {
-		case Output::Serial:
-			if(!SerialInited)
-				initSerial();
-			break;
-		case Output::VGA:
-			if(!VGAInited)
-				initVga();
-			break;
-	}
 	return 0;
 }

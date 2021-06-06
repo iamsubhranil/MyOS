@@ -55,14 +55,14 @@ void IRQ::remap() {
 }
 
 void IRQ::init() {
-	Terminal::info("Setting up IRQs..");
+	PROMPT_INIT("IRQ", Orange);
 	/*  We first remap the interrupt controllers, and then we install
 	 *  the appropriate ISRs to the correct entries in the IDT. This
 	 *  is just like installing the exception handlers */
-	Terminal::prompt(VGA::Color::Brown, "IRQ", "Remapping the PIC..");
+	PROMPT("Remapping the PIC..");
 	remap();
 
-	Terminal::prompt(VGA::Color::Brown, "IRQ", "Setting up IRQ hooks..");
+	PROMPT("Setting up IRQ hooks..");
 	IDT::setGate(32, (uptr)_irq0, 0x08, 0x8E);
 	IDT::setGate(33, (uptr)_irq1, 0x08, 0x8E);
 	IDT::setGate(34, (uptr)_irq2, 0x08, 0x8E);

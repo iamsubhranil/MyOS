@@ -98,6 +98,15 @@ uptr Paging::Page::alloc(bool isKernel, bool isWritable, uptr lastFrame) {
 	return frame;
 }
 
+uptr Paging::Page::allocDMA(bool isKernel, bool isWritable, uptr physicalAddr) {
+	present = 1;
+	rw      = isWritable;
+	user    = !isKernel;
+	frame   = physicalAddr >> 12;
+	// Terminal::write(" -> Alloc to frame ", frame, "\n");
+	return frame;
+}
+
 void Paging::Page::free() {
 	if(!frame)
 		return;
@@ -410,7 +419,7 @@ uptr Paging::Directory::getPhysicalAddress(uptr virtualAddress) const {
 }
 
 void Paging::init(Multiboot *boot) {
-	PROMPT_INIT("Paging", Brown);
+	PROMPT_INIT("Paging", Orange);
 	PROMPT("Setting up paging..");
 	Frame::init(boot);
 
@@ -428,6 +437,25 @@ void Paging::init(Multiboot *boot) {
 	for(uptr i = Heap::KHeapStart; i < Heap::KHeapEnd; i += Paging::PageSize) {
 		getPage(i, true, Directory::KernelDirectory);
 	}
+	uptr lastFrame = 0;
+
+	// check if fb is available and map accordingly
+	if(boot->flags & 0x800) {
+		PROMPT("VBE is available! Mapping the framebuffer!");
+		// map the vbe framebuffer
+		Multiboot::VbeModeInfo *vbe =
+		    (Multiboot::VbeModeInfo *)P2V(boot->vbe_mode_info);
+
+		uptr fbaddr = vbe->physbase;
+		uptr fbend  = fbaddr + vbe->pitch * vbe->Yres;
+		// identity map the fb
+		for(uptr i = fbaddr; i < fbend; i += Paging::PageSize) {
+			// use allocDMA, since we need the page at that particular
+			// physical address specifically
+			getPage(i, true, Directory::KernelDirectory)
+			    ->allocDMA(true, true, i);
+		}
+	}
 	// We need to create a mapping between our placement address,
 	// which is 0xc0000000 as specified in the linker script,
 	// with our physical address, which starts from 0.
@@ -435,7 +463,7 @@ void Paging::init(Multiboot *boot) {
 	// the mapping starts from 0x00000000 frame address.
 	// For this reason, kernel memory must be the first thing that
 	// is mapped.
-	uptr lastFrame = 0;
+	lastFrame = 0;
 
 	// PROMPT("Allocating frames for kernel memory and heap..");
 	for(uptr i = KMEM_BASE; i < Memory::placementAddress;
@@ -454,6 +482,15 @@ void Paging::init(Multiboot *boot) {
 	Directory::KernelDirectory->dump();
 	PROMPT("Switching page directory..");
 	switchPageDirectory(Directory::KernelDirectory);
+
+	// if vbe is available, switch to it now
+	if(boot->flags & 0x800) {
+		PROMPT("Switching to VGA..");
+		// switch the terminal to VGA
+		Terminal::write(Terminal::Output::VGA);
+		Terminal::init(boot);
+		PROMPT("Switched to VGA from Serial..");
+	}
 
 	PROMPT("Initalizing kernel heap..");
 	Heap *heap = (Heap *)(uptr)(Heap::KHeapStart);

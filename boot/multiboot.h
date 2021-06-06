@@ -104,7 +104,24 @@ struct Multiboot {
 		// u32  acpi3ea;
 	} __attribute__((packed));
 
-	struct VbeInfo {
+	struct VbeControlInfo {
+		char signature[4];  // must be "VESA" to indicate valid VBE support
+		u16  version;       // VBE version; high byte is major version, low byte
+		                    // is minor version
+		u32 oem;            // segment:offset pointer to OEM
+		u32 capabilities;   // bitfield that describes card capabilities
+		u32 video_modes;    // segment:offset pointer to list of supported video
+		                    // modes
+		u16  video_memory;  // amount of video memory in 64KB blocks
+		u16  software_rev;  // software revision
+		u32  vendor;        // segment:offset to card vendor string
+		u32  product_name;  // segment:offset to card model name
+		u32  product_rev;   // segment:offset pointer to product revision
+		char reserved[222]; // reserved for future expansion
+		char oem_data[256]; // OEM BIOSes store their strings in this area
+	} __attribute__((packed));
+
+	struct VbeModeInfo {
 		u16 attributes;
 		u8  winA, winB;
 		u16 granularity;
