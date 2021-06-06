@@ -59,7 +59,7 @@ void Terminal::setMode(Terminal::Mode c) {
 }
 
 void Terminal::writeSerialColor(Color c) {
-	const char *col = Serial::AsciiColors[c];
+	const char *col = Serial::AsciiColors[c >= Orange ? Red : c];
 	while(*col++) Serial::write(*(col - 1));
 }
 
@@ -98,7 +98,7 @@ u32 Terminal::write(const char &c) {
 u32 Terminal::write_nolock(const char &c) {
 	// if we are writing to serial, we'll directly output the char
 	if(CurrentOutput == Output::Serial) {
-		Serial::write(c);
+		putEntryAt(c, 0, 0);
 		return 1;
 	}
 	// otherwise, we need to manipulate the screen space ourselves
