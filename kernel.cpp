@@ -128,19 +128,18 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	GDT::init();
 	IDT::init();
 	IRQ::init();
-	// we are all done, now enable interrupts
-	Asm::sti();
+	// since irq0 is already hooked to scheduling tasks,
+	// enable the scheduler before enabling interrupts.
+	// the scheduler will set itself up, and then enable
+	// interrupt itself.
 	Scheduler::init();
-	// writeSomething();
-	// Task::init();
-	// Syscall::init();
-	// Task::switchToUserMode(esp);
-	Terminal::write("\n\n\t\t\t");
-	const char *text = "VGA BAAYYYBYYYYYYY!";
-	for(siz i = 1; *text; i = (i + 1) % Terminal::Color::LightGrey, text++) {
-		Terminal::write((Terminal::Color)i, *text, Terminal::Color::Reset);
-	};
-	Terminal::write("\n\n\n");
+	for(i32 i = 0; i < 100; i++) {
+		Terminal::write("Line: ", i, "\n");
+	}
+	u8 a[] = {1, 2, 3};
+	u8 b[] = {2, 3, 4};
+	Terminal::write((i32)memcmp(a, b, 3));
+	Terminal::write("a\nb\nc\nd\ne\nf\ng\n");
 	while(1) {
 		u32 *a = (u32 *)Memory::alloc(sizeof(u32));
 		Terminal::prompt(Terminal::Color::Blue, "Kernel", "u32 allocated at ",
