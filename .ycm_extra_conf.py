@@ -27,9 +27,7 @@ SOURCE_EXTENSIONS = [
         ]
 
 SOURCE_DIRECTORIES = [
-        'src',
-        'lib',
-        'app'
+        '.'
         ]
 
 HEADER_EXTENSIONS = [

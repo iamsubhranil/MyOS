@@ -77,6 +77,7 @@ void ISR::uninstallHandler(u8 isr) {
 
 extern "C" {
 void _fault_handler(Register *registers) {
+	Terminal::spinlock.unlock(); // force unlock the term
 	Terminal::info("INTERRUPT");
 	/* Is this a fault whose number is from 0 to 31? */
 	if(registers->int_no < 256) {

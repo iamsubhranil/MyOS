@@ -3,19 +3,20 @@ LD=i686-elf-ld
 CXXFLAGS=-Wall -Wextra -fno-exceptions -fno-rtti -nostdlib -ffreestanding -I. -std=c++17
 QEMUFLAGS=
 
-# $(wildcard *.cpp /xxx/xxx/*.cpp): get all .cpp files from the current directory and dir "/xxx/xxx/"
 SRCS := $(wildcard *.cpp */*.cpp */*/*.cpp */*/*/*.cpp)
-# $(patsubst %.cpp,%.o,$(SRCS)): substitute all ".cpp" file name strings to ".o" file name strings
 OBJS := $(patsubst %.cpp,%.o,$(SRCS))
 
-boot: arch/x86/boot.S
-	$(CXX) $(CXXFLAGS) arch/x86/boot.S -c -o boot.o
+ASMSRCS := $(wildcard *.S */*.S */*/*.S */*/*/*.S)
+ASMOBJS := $(patsubst %.S,%.o,$(ASMSRCS))
 
 %.o: %.cpp
 	$(CXX) -c $< -o $@ $(CXXFLAGS)
 
-linker: linker.ld $(OBJS) 
-	$(CXX) -T linker.ld -o myos.bin -ffreestanding $(CXXFLAGS) -nostdlib $(OBJS) boot.o -lgcc
+%.o: %.S
+	$(CXX) -c $< -o $@ $(CXXFLAGS)
+
+linker: linker.ld $(OBJS) $(ASMOBJS)
+	$(CXX) -T linker.ld -o myos.bin -ffreestanding $(CXXFLAGS) -nostdlib $(OBJS) $(ASMOBJS) -lgcc
 
 iso: linker
 	cp myos.bin isodir/boot/myos.bin
@@ -33,7 +34,7 @@ gdbstart:
     -ex 'target remote localhost:1234'
 
 clean:
-	$(RM) -f $(OBJS) myos.bin
+	$(RM) -f $(ASMOBJS) $(OBJS) myos.bin
 
 depend: .depend
 
@@ -49,15 +50,15 @@ include .depend
 all: release
 release: CXXFLAGS += -O2
 release: QEMUFLAGS = -serial stdio
-release: boot linker start
+release: linker start
 
 debug: CXXFLAGS += -O0 -g3 -fno-omit-frame-pointer
 debug: QEMUFLAGS += -no-shutdown -no-reboot -serial mon:stdio
-debug: boot linker start
+debug: linker start
 
 debug_iso: CXXFLAGS += -O0 -g3 -fno-omit-frame-pointer
 debug_iso: QEMUFLAGS = -no-shutdown -no-reboot -serial mon:stdio -S -s
-debug_iso: boot linker iso
+debug_iso: linker iso
 
 debug_gdb: QEMUFLAGS += -S -s
 debug_gdb: debug
