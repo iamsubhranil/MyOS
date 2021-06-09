@@ -4,12 +4,6 @@
 
 extern "C" {
 
-siz strlen(const char *str) {
-	siz len = 0;
-	while(str[len]) len++;
-	return len;
-}
-
 void *memmove(void *dest, const void *source, siz size) {
 	u8 *dest8   = (u8 *)dest;
 	u8 *source8 = (u8 *)source;
