@@ -16,12 +16,10 @@ rep stosb // copy
 memset_big:
 // restore the original size
 mov %edx, %ecx
-// find the remaining bytes
-and $0xfffffffc, %ecx
+shr $2, %ecx // convert byte count to 4byte count
 // if we're done, return
 jz memset_ret
 // we have some more bytes to copy
-shr $2, %ecx // convert byte count to 4byte count
 // single byte is passed as argument,
 // convert it to 4bytes, so that we can copy 4bytes at once
 mov %eax, %edx
@@ -56,9 +54,8 @@ movsw // copy remaining word
 memsetw_big:
 // check if we have remaining 4byte words
 mov %edx, %ecx
-and $0xfffffffe, %ecx
-jz memsetw_ret // we don't have any 4byte words, so skip it
 shr $1, %ecx // convert 2byte word count to 4byte word count
+jz memsetw_ret // we don't have any 4byte words, so skip it
 // argument word is 2 bytes, convert it to 4bytes, so that we can
 // copy 4bytes at once
 mov %eax, %edx
