@@ -142,8 +142,9 @@ struct Multiboot {
 		u8 directcolor_attributes;
 
 		u32 physbase;
-		u32 reserved1;
-		u16 reserved2;
+		u32 off_screen_mem_off;
+		u16 off_screen_mem_size;
+		u8  resvered[206];
 	} __attribute__((packed));
 
 } __attribute__((packed));

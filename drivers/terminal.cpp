@@ -27,9 +27,10 @@ void Terminal::initVga(Multiboot *m) {
 	    (Multiboot::VbeModeInfo *)P2V(m->vbe_mode_info);
 	VGA::init(vbe);
 	Font::init();
-	vgaLineWidth  = Font::charactersPerLine();
-	vgaLineHeight = Font::linesPerFrame();
-	VGAInited     = true;
+	vgaLineWidth = Font::charactersPerLine();
+	vgaLineHeight =
+	    Font::linesPerFrame() - 4; // move up a bit from the end of the screen
+	VGAInited = true;
 }
 
 void Terminal::initSerial() {
@@ -122,8 +123,8 @@ u32 Terminal::write_nolock(const char &c) {
 	if(++column == vgaLineWidth) {
 		column = 0;
 		if(++row == vgaLineHeight) {
-			// row = 0;
 			moveUpOneRow();
+			row = vgaLineHeight - 1;
 		}
 	}
 	return 1;

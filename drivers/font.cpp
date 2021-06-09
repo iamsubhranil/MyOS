@@ -35,6 +35,7 @@ VGA::Point Font::Renderer::render(VGA::Point p, char c, u32 color) {
 		bak.y++;
 	}
 	p.x += w;
+	// VGA::flush();
 	return p;
 }
 

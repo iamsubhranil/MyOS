@@ -45,6 +45,14 @@ struct VGA {
 		u8 r, g, b;
 		Color2(u8 x, u8 y, u8 z) : r(x), g(y), b(z) {
 		}
+		Color2 dim(u8 intensity) {
+			return Color2(r * intensity / 255, g * intensity / 255,
+			              b * intensity / 255);
+		}
+		Color2 interpolate(Color2 &other, u8 opacity) {
+			(void)opacity;
+			return other;
+		}
 		operator u32() {
 			return (u32)r << VGA::RedPosition | (u32)g << VGA::GreenPosition |
 			       (u32)b << VGA::BluePosition;
@@ -53,7 +61,8 @@ struct VGA {
 
 	static void init(Multiboot::VbeModeInfo *vbem);
 	// assume 32 bit framebuffer for now
-	static u32 *FrameBuffer;
+	static u32 *PhysicalFrameBuffer;
+	static u32 *BackBuffer;
 	static u8   BitsPerPixel;
 	static u16  Pitch;
 	static u16  Width;
@@ -65,7 +74,7 @@ struct VGA {
 
 	static inline u32 *pixelAt(Point p) {
 		return (u32 *)(p.y * Pitch + (p.x * (BitsPerPixel / 8)) +
-		               (u8 *)FrameBuffer);
+		               (u8 *)BackBuffer);
 	}
 	static void setPixel(Point p, u32 color);
 	static void drawLine(Point start, Point end, u32 color);
@@ -79,4 +88,7 @@ struct VGA {
 	                       u32 outlineWidth = 1, u32 fillColor = 0xFF000000);
 	// brings the given point to 0,0, fills the empty space at the end with 0
 	static void scrollForward(Point p);
+
+	// flushes the back buffer to video memory
+	static void flush();
 };

@@ -376,6 +376,8 @@ void Paging::handlePageFault(Register *regs) {
 	    regs->err_code & 0x8; // Overwritten CPU-reserved bits of page entry?
 	int id = regs->err_code & 0x10; // Caused by an instruction fetch?
 
+	// force unlock the term
+	Terminal::spinlock.unlock();
 	// Output an error message.
 	Terminal::write("Page fault! ( ");
 	if(present) {
@@ -483,6 +485,11 @@ void Paging::init(Multiboot *boot) {
 	PROMPT("Switching page directory..");
 	switchPageDirectory(Directory::KernelDirectory);
 
+	PROMPT("Initalizing kernel heap..");
+	Heap *heap = (Heap *)(uptr)(Heap::KHeapStart);
+	heap->init(Heap::KHeapEnd - Heap::KHeapStart);
+	Memory::kernelHeap = heap;
+
 	// if vbe is available, switch to it now
 	if(boot->flags & 0x800) {
 		PROMPT("Switching to VGA..");
@@ -491,11 +498,6 @@ void Paging::init(Multiboot *boot) {
 		Terminal::init(boot);
 		PROMPT("Switched to VGA from Serial..");
 	}
-
-	PROMPT("Initalizing kernel heap..");
-	Heap *heap = (Heap *)(uptr)(Heap::KHeapStart);
-	heap->init(Heap::KHeapEnd - Heap::KHeapStart);
-	Memory::kernelHeap = heap;
 
 	Terminal::done("Paging setup complete!");
 }
