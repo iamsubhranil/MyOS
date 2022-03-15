@@ -448,11 +448,11 @@ _isr_syscall:
     up for kernel mode segments, calls the C-level fault handler,
     and finally restores the stack frame. */
 isr_common_stub:
-    pusha
     push %ds
     push %es
     push %fs
     push %gs
+    pusha
     mov $0x10, %ax   /* Load the Kernel Data Segment descriptor! */
     mov %ax, %ds
     mov %ax, %es
@@ -460,17 +460,16 @@ isr_common_stub:
     mov %ax, %gs
     mov %esp, %eax
     push %eax
-    //mov _fault_handler, %eax
-    //call *%eax       /* A special call, preserves the 'eip' register */
     call _fault_handler
     pop %eax
+    // pop gpr's
+    popa
+    // pop segment registers
     pop %gs
     pop %fs
     pop %es
     pop %ds
-    popa
     add $8, %esp     /* Cleans up the pushed error code and pushed ISR number */
-    sti             /* enable interrupts now */
     iret           /* pops 5 things at once: CS, EIP, EFLAGS, SS, and ESP! */
 
 /* IRQs */
@@ -594,11 +593,11 @@ _irq15:
 /* This is a stub that we have created for IRQ based ISRs. This calls
  '_irq_handler' in our C code. We need to create this in an 'irq.c' */
 irq_common_stub:
-    pusha
     push %ds
     push %es
     push %fs
     push %gs
+    pusha
     mov $0x10, %ax
     mov %ax, %ds
     mov %ax, %es
@@ -606,15 +605,13 @@ irq_common_stub:
     mov %ax, %gs
     mov %esp, %eax // our register struct starts from here
     push %eax
-    //mov _irq_handler, %eax
-    //call *%eax
     call _irq_handler
     pop %eax
+    popa
     pop %gs
     pop %fs
     pop %es
     pop %ds
-    popa
     add $0x8, %esp // cleanup error code and irq number
     iret
 
@@ -748,11 +745,6 @@ leaveTask:
     add $0x4, %esp
     // finally, jmp to set
     jmp *-0x4(%esp)
-
-.global eip_load
-eip_load:
-    mov (%esp), %eax
-    ret
 
 /*
 Set the size of the _start symbol to the current location '.' minus its start.

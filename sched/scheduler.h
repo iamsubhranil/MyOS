@@ -11,11 +11,20 @@
 struct Scheduler {
 
 	static volatile Task *ReadyQueue;
-	static volatile Task *WaitingQueue;
 	static volatile Task *CurrentTask;
 	static volatile Task *FinishedTasks;
 	static SpinLock       SchedulerLock;
 	static Semaphore      CleanupSemaphore;
+
+	// amount of time each task should run before it is switched
+	static const u64 TimeSliceMs = 150;
+	// priority queue based on lastStartTime, which acts as
+	// time of resume
+	static volatile Task *WaitingQueue;
+
+	// increment in tsc per milisecond, calibrated once for now
+	static u64 TscTicksPerMs;
+	static u64 TscTicksPerTimeSlice;
 
 	// this will schedule the task, and block till the task
 	// is finished, and then return the result
@@ -40,7 +49,7 @@ struct Scheduler {
 	template <typename T, typename... F>
 	static Future<T> *submit(T (*run)(F... args), F... args) {
 		Future<T> *result = Memory::create<Future<T>>();
-		Task *     t      = Memory::create<Task>();
+		Task      *t      = Memory::create<Task>();
 		t->runner         = (void *)run;
 		prepare(t, (void *)result, (void *)&Future<T>::set, sizeof...(args));
 		uptr *stk = (uptr *)t->regs.useless_esp;
@@ -104,6 +113,16 @@ struct Scheduler {
 	// will instruct the scheduler to move to the next task,
 	// saving the state of the current task.
 	static void yield() {
+		CurrentTask->yielded = true;
+		// enable interrupts if it wasn't already
+		// and then call the scheduler interrupt
+		asm volatile("sti\n"
+		             "int $0x20\n");
+	}
+
+	static void resume_and_yield() {
+		RecursiveSuspendCounter--;
+		CurrentTask->yielded = true;
 		// enable interrupts if it wasn't already
 		// and then call the scheduler interrupt
 		asm volatile("sti\n"
@@ -121,6 +140,8 @@ struct Scheduler {
 
 	// cleans up resources used by finished tasks
 	static void cleanupTask();
+
+	static void sleep(u64 ms);
 
 	static void init();
 };

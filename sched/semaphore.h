@@ -6,7 +6,7 @@
 struct Semaphore {
 	i32 value;
 	// list of tasks which are waiting on this semaphore
-	Task *   taskList;
+	Task    *taskList;
 	SpinLock lock;
 
 	Semaphore(u32 initial) {

@@ -5,7 +5,7 @@
 void Semaphore::acquire() {
 	lock.lock();
 	if(value == 0) {
-		Task * s       = (Task *)Scheduler::getCurrentTask();
+		Task  *s       = (Task *)Scheduler::getCurrentTask();
 		Task **waiters = &taskList;
 		while(*waiters) {
 			waiters = &(*waiters)->nextInList;

@@ -1,3 +1,4 @@
+#include <arch/x86/idt.h>
 #include <arch/x86/irq.h>
 #include <drivers/io.h>
 #include <drivers/terminal.h>
@@ -7,7 +8,7 @@
 volatile u32 Timer::ticks     = 0;
 u32          Timer::frequency = 18;
 
-void Timer::setFrequency(u16 hz) {
+void Timer::setFrequency(u32 hz) {
 	Terminal::prompt(Terminal::Color::Orange, "PIT", "Setting frequency to ",
 	                 hz, "..");
 	u16 divisor = 1193180 / hz;     /* Calculate our divisor */
@@ -32,7 +33,7 @@ void Timer::handler(Register *r) {
 	 *  display a message on the screen */
 	// if(ticks % frequency == 0) {
 	//	Terminal::prompt(Terminal::Color::Blue, "Timer", "One second is
-	//done..");
+	// done..");
 	// }
 }
 
@@ -52,4 +53,30 @@ void Timer::init() {
 	u32 freq = 100;
 	Timer::setFrequency(freq);
 	Terminal::done("PIT setup complete..");
+}
+
+extern "C" {
+extern void _irq0();
+// arch/x86/tsc.S
+extern void _tsc_measure_irq();
+extern u64  tsc_measure(u32 freq);
+};
+
+u64 Timer::calibrateTSC() {
+	// set to a known freq
+	u16 freqBak = frequency;
+	u32 freq    = 1000;
+	Timer::setFrequency(freq);
+	// install calibration handler
+	IDT::setGate(32, (uptr)_tsc_measure_irq, 0x08, 0x8E);
+	// call measurement function
+	// measure for less ticks, and then extrapolate
+	u64 elapsed = tsc_measure(freq / 100) * 100;
+	// reinstall the original handler
+	IDT::setGate(32, (uptr)_irq0, 0x08, 0x8E);
+	// reset the freq
+	Timer::setFrequency(freqBak);
+	// so, tsc / ms is elapsed / freq
+	u64 elapsedAvg = (elapsed / freq) * (freq / 1000);
+	return elapsedAvg;
 }

@@ -5,7 +5,7 @@
 #include <sys/myos.h>
 
 #define PROMPT_INIT(name, color)            \
-	const char *    __prompt_header = name; \
+	const char     *__prompt_header = name; \
 	Terminal::Color __prompt_color  = Terminal::Color::color;
 #define PROMPT(...) \
 	Terminal::prompt(__prompt_color, __prompt_header, __VA_ARGS__);

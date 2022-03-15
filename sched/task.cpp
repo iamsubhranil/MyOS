@@ -42,4 +42,6 @@ Task::Task() {
 	memset(&regs, 0, sizeof(Register));
 	regs.fs = regs.es = regs.ds = regs.gs = 0x10;
 	regs.cs                               = 0x08;
+	lastStartTime = elapsedTime = 0;
+	yielded                     = false;
 }

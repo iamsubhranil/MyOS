@@ -59,6 +59,15 @@ void writeSomething(u32 id, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g) {
 extern "C" { /* Use C linkage for kernel_main. */
 #endif
 
+void sleepTask() {
+	for(u32 i = 1; i < 1000; i++) {
+		u32 ms = 5000;
+		Terminal::write("[Sleeper] Sleeping for ", ms / 1000, " sec..\n");
+		Scheduler::sleep(ms);
+		Terminal::write("[Sleeper] Woke up!\n");
+	}
+}
+
 void addNewTask() {
 	for(u32 i = 1; i < 25; i++) {
 		Scheduler::submit(writeSomething, i, i * 2, i * 4, i * 8, i * 16,
@@ -114,10 +123,6 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	(void)useless0;
 	(void)useless1;
 
-	Multiboot::VbeModeInfo *vbem =
-	    (Multiboot::VbeModeInfo *)P2V(mboot->vbe_mode_info);
-	Multiboot::VbeControlInfo *vbec =
-	    (Multiboot::VbeControlInfo *)P2V(mboot->vbe_control_info);
 	// Terminal::CurrentOutput = Terminal::Output::VGA;
 	Terminal::init(mboot);
 	mboot->dump();
@@ -169,8 +174,9 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	Scheduler::submit(finishableTask);
 	// addFibTask();
 	Scheduler::submit(calcFib, (u32)2);
-	writeSomething(0, 1, 2, 3, 4, 5, 6, 7);
-	// asm volatile("1: jmp 1b");
+	Scheduler::submit(sleepTask);
+	// writeSomething(0, 1, 2, 3, 4, 5, 6, 7);
+	asm volatile("1: hlt; jmp 1b");
 }
 
 #if defined(__cplusplus)

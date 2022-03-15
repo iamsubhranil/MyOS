@@ -58,6 +58,12 @@ struct Asm {
 		             :
 		             : "g"(flags));
 	}
+
+	static inline u64 rdtsc() {
+		u64 ret;
+		asm volatile("rdtsc" : "=A"(ret));
+		return ret;
+	}
 };
 
 #define PAUSEI()          \
