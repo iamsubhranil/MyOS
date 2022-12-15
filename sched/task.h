@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mem/heap.h>
 #include <mem/paging.h>
 #include <sys/myos.h>
 #include <sys/string.h>
@@ -77,6 +78,7 @@ struct Task {
 	u32                id; // id of the task
 	Register           regs;
 	Paging::Directory *pageDirectory;
+	Heap               heap;
 	Task *prev, *next;   // this is used by the scheduler specifically
 	u64   elapsedTime;   // total time in ms this task is running for
 	u64   lastStartTime; // tsc count when this task was scheduled before
@@ -90,5 +92,8 @@ struct Task {
 	              // not expired
 
 	static const siz DefaultStackSize = 1024 * 4; // let's make it 4KiB for now
+	static const siz DefaultHeapSize =
+	    1024 * 1024; // let's make it 1MiB for now
+	static const siz DefaultHeapStart = 0x40000000; // base address for the heap
 	Task();
 };

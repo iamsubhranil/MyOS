@@ -5,10 +5,11 @@
 #include <mem/heap.h>
 #include <mem/memory.h>
 #include <mem/paging.h>
+#include <sched/scheduler.h>
 #include <sys/stacktrace.h>
 #include <sys/string.h>
 
-u32 *              Paging::Frame::frames               = NULL;
+u32               *Paging::Frame::frames               = NULL;
 siz                Paging::Frame::numberOfFrames       = 0;
 siz                Paging::Frame::numberOfSets         = 0;
 Paging::Directory *Paging::Directory::CurrentDirectory = NULL;
@@ -85,7 +86,11 @@ uptr Paging::Page::alloc(bool isKernel, bool isWritable, uptr lastFrame) {
 	}
 	siz idx;
 	if(!Frame::findFirstFreeFrame(idx, lastFrame)) {
-		Terminal::err("No free frames!");
+		Scheduler::suspend();
+		Terminal::err("No free frames:\n");
+		Terminal::err("Task: ", (u64)Scheduler::CurrentTask->id);
+		Terminal::err("Directory dump:\n");
+		Paging::Directory::CurrentDirectory->dump();
 		for(;;)
 			;
 	}
@@ -130,7 +135,7 @@ void Paging::Frame::init(Multiboot *boot) {
 	numberOfFrames = Memory::Size / PageSize;
 	// each frame occupies 1 bit of memory, so we need
 	// numberOfFrames / 8 bytes of memory
-	frames = (u32 *)Memory::alloc(numberOfFrames / 8);
+	frames = (u32 *)Memory::kalloc_noheap(numberOfFrames / 8);
 	// by default, mark all frames as used
 	memset(frames, 0xFF, numberOfFrames / 8);
 	numberOfSets = numberOfFrames / (8 * sizeof(frames[0]));
@@ -175,21 +180,37 @@ Paging::Page *Paging::getPage(uptr address, bool create,
 	siz table_idx = getTableIndex(address);
 	siz pageno    = getPageNo(address);
 
-	// Terminal::write("  TableIdx: ", table_idx, " PageNo: ", pageno, " ",
-	//                address / PageSize, Terminal::Mode::Reset, "\n");
-
 	if(dir->tables[table_idx]) { // If this table is already assigned
 		// Terminal::write(table_idx, " Page already exists!\n");
 		return &dir->tables[table_idx]->pages[pageno];
 	} else if(create) {
 		dir->tables[table_idx] =
-		    (Paging::Table *)Memory::alloc_a(sizeof(Paging::Table));
+		    (Paging::Table *)Memory::kalloc_a(sizeof(Paging::Table));
 		uptr tmp = Paging::getPhysicalAddress((uptr)dir->tables[table_idx]);
-		// Terminal::write(
-		//   "Creating new table (sizeof(Table): ", sizeof(Paging::Table),
-		//   " sizeof(Page): ", sizeof(Paging::Page),
-		//   " phyaddr: ", Terminal::Mode::Hex, tmp, Terminal::Mode::Reset,
-		//   "\n");
+		memset(dir->tables[table_idx], 0, sizeof(Paging::Table));
+		dir->tablesPhysical[table_idx] = tmp | 0x7; // PRESENT, RW, US.
+		return &dir->tables[table_idx]->pages[pageno];
+	} else {
+		return NULL;
+	}
+}
+
+Paging::Page *Paging::getPage_noheap(uptr address, bool create,
+                                     Paging::Directory *dir) {
+	// Terminal::write(Terminal::Mode::Hex, "Address: ", address, " ");
+
+	// Turn the address into an index.
+	// Find the page table containing this address.
+	// find the overall page no
+	siz table_idx = getTableIndex(address);
+	siz pageno    = getPageNo(address);
+
+	if(dir->tables[table_idx]) { // If this table is already assigned
+		return &dir->tables[table_idx]->pages[pageno];
+	} else if(create) {
+		dir->tables[table_idx] =
+		    (Paging::Table *)Memory::kalloc_anoheap(sizeof(Paging::Table));
+		uptr tmp = Paging::getPhysicalAddress((uptr)dir->tables[table_idx]);
 		memset(dir->tables[table_idx], 0, sizeof(Paging::Table));
 		dir->tablesPhysical[table_idx] = tmp | 0x7; // PRESENT, RW, US.
 		return &dir->tables[table_idx]->pages[pageno];
@@ -260,7 +281,7 @@ void Paging::resetPage(uptr address, Paging::Directory *dir, bool soft) {
 }
 
 Paging::Directory *Paging::Directory::clone() {
-	Directory *dir = (Directory *)Memory::alloc_a(sizeof(Directory));
+	Directory *dir = (Directory *)Memory::kalloc_a(sizeof(Directory));
 	memset(dir, 0, sizeof(Directory));
 
 	dir->physicalAddr = Paging::getPhysicalAddress((uptr)&dir->tablesPhysical);
@@ -308,7 +329,7 @@ Paging::Directory *Paging::Directory::clone() {
 Paging::Table *Paging::Table::clone(uptr &phys, siz table_idx,
                                     Page *pageCopyTemp,
                                     uptr  pageCopyAddress) const {
-	Table *table = (Table *)Memory::alloc_a(sizeof(Table));
+	Table *table = (Table *)Memory::kalloc_a(sizeof(Table));
 	memset(table, 0, sizeof(Table));
 	phys = Paging::getPhysicalAddress((uptr)table);
 
@@ -430,14 +451,14 @@ void Paging::init(Multiboot *boot) {
 
 	PROMPT("Creating kernel page directory..");
 	Directory::KernelDirectory =
-	    (Directory *)Memory::alloc_a(sizeof(Directory));
+	    (Directory *)Memory::kalloc_anoheap(sizeof(Directory));
 	memset(Directory::KernelDirectory, 0, sizeof(Directory));
 
 	Directory::KernelDirectory->physicalAddr =
 	    getPhysicalAddress((uptr)&Directory::KernelDirectory->tablesPhysical);
 
 	for(uptr i = Heap::KHeapStart; i < Heap::KHeapEnd; i += Paging::PageSize) {
-		getPage(i, true, Directory::KernelDirectory);
+		getPage_noheap(i, true, Directory::KernelDirectory);
 	}
 	uptr lastFrame = 0;
 
@@ -454,7 +475,7 @@ void Paging::init(Multiboot *boot) {
 		for(uptr i = fbaddr; i < fbend; i += Paging::PageSize) {
 			// use allocDMA, since we need the page at that particular
 			// physical address specifically
-			getPage(i, true, Directory::KernelDirectory)
+			getPage_noheap(i, true, Directory::KernelDirectory)
 			    ->allocDMA(true, true, i);
 		}
 	}
@@ -470,13 +491,13 @@ void Paging::init(Multiboot *boot) {
 	// PROMPT("Allocating frames for kernel memory and heap..");
 	for(uptr i = KMEM_BASE; i < Memory::placementAddress;
 	    i += Paging::PageSize) {
-		lastFrame = getPage(i, true, Directory::KernelDirectory)
+		lastFrame = getPage_noheap(i, true, Directory::KernelDirectory)
 		                ->alloc(true, true, lastFrame);
 		// Terminal::write("lastframe: ", Terminal::Mode::HexOnce, lastFrame,
 		//                "\n");
 	}
 	// map the first page
-	getPage(Heap::KHeapStart, true, Directory::KernelDirectory)
+	getPage_noheap(Heap::KHeapStart, true, Directory::KernelDirectory)
 	    ->alloc(true, true, lastFrame);
 	// we don't need to map heap
 
@@ -487,7 +508,10 @@ void Paging::init(Multiboot *boot) {
 
 	PROMPT("Initalizing kernel heap..");
 	Heap *heap = (Heap *)(uptr)(Heap::KHeapStart);
-	heap->init(Heap::KHeapEnd - Heap::KHeapStart);
+	heap->init(Heap::KHeapStart + sizeof(Heap),
+	           Heap::KHeapEnd - Heap::KHeapStart, Directory::KernelDirectory);
+	// this address will be invalidated soon after scheduler activates
+	// the kernel task. it will reassign the heap.
 	Memory::kernelHeap = heap;
 
 	// if vbe is available, switch to it now

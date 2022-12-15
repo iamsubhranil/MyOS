@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mem/paging.h>
 #include <sched/spinlock.h>
 #include <sys/myos.h>
 
@@ -92,6 +93,9 @@ struct Heap {
 	static const siz KHeapStart = 0xD0000000;
 	static const siz KHeapEnd   = 0xDFFFFFFF;
 
+	// the page directory associated with this heap
+	Paging::Directory *directory;
+
 	SpinLock
 	    heapLock; // make sure only one thread accesses alloc/free at a time
 
@@ -154,7 +158,7 @@ struct Heap {
 		// ensures that the page this header belongs is
 		// mapped already. If full is true, this ensures
 		// that all the pages upto allocationSize is mapped
-		void ensureMapped(bool full = false);
+		void ensureMapped(Paging::Directory *directory, bool full = false);
 	};
 
 	// only free headers are kept in the tree.
@@ -172,9 +176,9 @@ struct Heap {
 	void *alloc_a(siz size);
 	void  free(void *mem);
 
-	// heap will use the 'this' pointer as the baseline address
+	// base contains the base address of start of the heap
 	// size contains the total size of the heap. the heap will
 	// not allocate all the pages upfront, it will just reserve
 	// them.
-	void init(siz size);
+	void init(siz base, siz size, Paging::Directory *dir);
 };

@@ -15,10 +15,9 @@ u64            Scheduler::TscTicksPerTimeSlice    = 0;
 
 void Scheduler::prepare(Task *t, void *future_addr, void *future_set,
                         u32 numargs) {
-	t->pageDirectory = Paging::Directory::CurrentDirectory->clone();
+	// PROMPT_INIT("Scheduler::prepare", Orange);
 	// allocate a new stack
-	Paging::switchPageDirectory(t->pageDirectory);
-	t->stackptr = Memory::alloc_a(Task::DefaultStackSize);
+	t->stackptr = Memory::kalloc_a(Task::DefaultStackSize);
 	uptr *newStack =
 	    (uptr *)(t->stackptr) + Task::DefaultStackSize / sizeof(uptr) - 1;
 	// stack for task finish
@@ -61,8 +60,11 @@ void Scheduler::prepare(Task *t, void *future_addr, void *future_set,
 	*newStack-- = 0x0; // ebp
 	*newStack-- = 0x0; // esi
 	*newStack-- = 0x0; // edi
-	// now turn back to the old directory
-	Paging::switchPageDirectory(CurrentTask->pageDirectory);
+
+	t->pageDirectory = Paging::Directory::CurrentDirectory->clone();
+	// PROMPT("here");
+	t->heap.init(Task::DefaultHeapStart, Task::DefaultHeapSize,
+	             t->pageDirectory);
 }
 
 void Scheduler::appendTask(Task *t) {
@@ -211,16 +213,19 @@ extern uptr scheduler_scheduleNext(Register *oldRegisters) {
 }
 
 void Scheduler::cleanupTask() {
+	// PROMPT_INIT("CleanupTask", Orange);
 	while(true) {
 		// acquire the semaphore to make sure we have
 		// tasks to be cleaned
 		CleanupSemaphore.acquire();
 		// for now, just release the stack
-		Memory::free(FinishedTasks->stackptr);
+		// PROMPT("Cleaning up");
+		Memory::kfree(FinishedTasks->stackptr);
+		// Memory::kfree(FinishedTasks->heap);
 		Task *OldFinishedTask = (Task *)FinishedTasks;
 		// u32   oldId           = OldFinishedTask->id;
 		FinishedTasks = FinishedTasks->nextInList;
-		Memory::free(OldFinishedTask);
+		Memory::kfree(OldFinishedTask);
 		// Terminal::write("Cleaned up: Task#", oldId, "\n");
 	}
 }
@@ -231,12 +236,14 @@ void Scheduler::init() {
 	PROMPT("Creating kernel task..");
 	SchedulerLock    = SpinLock();
 	CleanupSemaphore = Semaphore(0);
-	Task *t          = Memory::create<Task>();
+	Task *t          = Memory::kcreate<Task>();
 	CurrentTask = ReadyQueue = t;
 	t->state                 = Task::State::Scheduled;
 	t->prev                  = t;
 	t->next                  = t;
 	t->pageDirectory         = Paging::Directory::KernelDirectory;
+	t->heap                  = *Memory::kernelHeap;
+	Memory::kernelHeap       = &t->heap;
 	PROMPT("Initializing timer..");
 	Timer::init();
 	PROMPT("Calibrating TSC..");
@@ -244,10 +251,12 @@ void Scheduler::init() {
 	TscTicksPerMs        = Timer::calibrateTSC();
 	TscTicksPerTimeSlice = TscTicksPerMs * TimeSliceMs;
 	t->lastStartTime     = Asm::rdtsc();
-	PROMPT("Waiting for the task to be scheduled..");
+	PROMPT("Waiting for the kernel task to be scheduled..");
 	Asm::sti();
 	while(CurrentTask->state == Task::State::Scheduled)
 		;
+	PROMPT("Task schedule complete!");
+	PROMPT("Starting the cleanup task..");
 	// start the cleanup task
 	submit(cleanupTask);
 	PROMPT("Initialization complete!");

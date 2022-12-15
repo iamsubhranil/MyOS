@@ -4,41 +4,35 @@
 #include <sched/scopedlock.h>
 #include <sys/string.h>
 
-void Heap::init(siz size) {
+void Heap::init(siz base, siz size, Paging::Directory *dir) {
+	directory = dir;
 	// size must be pagealigned
 	Paging::alignIfNeeded(size);
-	heapStart = (uptr)this;
+	heapStart = (uptr)base;
 	heapEnd   = heapStart + size;
 	// after us, the first we'll do is make space for
 	// all the buckets that we may create in the future.
-	buckets = (Bucket *)(heapStart + sizeof(Heap));
+	buckets = (Bucket *)(heapStart);
 
 	// we'll use the first page for ourselves, and leave
 	// the rest of the place for everything else.
-	uptr usable = size - Paging::PageSize;
-	// now find the number of buckets we can fit
-	maxBucketMemory     = usable / BucketRatio;
-	numBuckets          = maxBucketMemory / BucketSize;
-	bucketAdditionalMem = numBuckets * sizeof(Bucket);
-	// is the total overhead required more than our allocated
-	// 4KiB?
-	if(bucketAdditionalMem + sizeof(Heap) > Paging::PageSize) {
-		// try to find an optimal range where we will have
-		// enough place to place the buckets themselves
-		while(bucketAdditionalMem + sizeof(Heap) + usable > size) {
-			// reduce the usable memory by a page
-			usable -= Paging::PageSize;
-			maxBucketMemory     = usable / BucketRatio;
-			numBuckets          = maxBucketMemory / BucketSize;
-			bucketAdditionalMem = numBuckets * sizeof(Bucket);
-		}
+	uptr usable         = size;
+	bucketAdditionalMem = 1;
+	// try to find an optimal range where we will have
+	// enough place to place the buckets themselves
+	while(bucketAdditionalMem + usable > size) {
+		// reduce the usable memory by a page
+		usable -= Paging::PageSize;
+		maxBucketMemory     = usable / BucketRatio;
+		numBuckets          = maxBucketMemory / BucketSize;
+		bucketAdditionalMem = numBuckets * sizeof(Bucket);
 	}
+	// PROMPT_INIT("Heap::init", Orange);
 	// make sure all the pages needed by us to manage the heap
 	// are allocated
 	for(uptr i = (uptr)heapStart; i < (uptr)buckets + bucketAdditionalMem;
 	    i += Paging::PageSize) {
-		Paging::getPage(i, true, Paging::Directory::CurrentDirectory)
-		    ->alloc(true, true);
+		Paging::getPage(i, true, directory)->alloc(true, true);
 	}
 	// we'll use 'usable' amount of memory from the end of this heap,
 	// so calculate that first.
@@ -56,14 +50,17 @@ void Heap::init(siz size) {
 
 	// initialize the large header
 	headerRoot = (Header *)largeAllocationStart;
-	headerRoot->ensureMapped();
+	headerRoot->ensureMapped(directory);
+	auto bak = Paging::Directory::CurrentDirectory;
+	Paging::switchPageDirectory(directory);
 	headerRoot->allocationSize = (largeAllocationEnd - largeAllocationStart);
 	headerRoot->left           = NULL;
 	headerRoot->right          = NULL;
 	headerRoot->previousHeader = NULL;
 	headerRoot->magic          = Header::Magic;
-
-	heapLock = SpinLock();
+	heapLock                   = SpinLock();
+	Paging::switchPageDirectory(bak);
+	// PROMPT("Heap init complete!");
 }
 
 void *Heap::alloc(siz bytes) {
@@ -74,7 +71,7 @@ void *Heap::alloc(siz bytes) {
 		siz c = getSizeClass(bytes);
 		if(bucketClassList[c]) {
 			Bucket *b = bucketClassList[c];
-			void *  m = b->allocateBlock();
+			void   *m = b->allocateBlock();
 			if(m)
 				return m;
 			// try to find a bucket which can allocate this block
@@ -115,7 +112,7 @@ void *Heap::alloc(siz bytes) {
 		// a new huge object, i.e. of size BlockEnd + 1
 		if(h->allocationSize > bytes + sizeof(Header) + BlockEnd) {
 			Header *nh = (Header *)((uptr)h + sizeof(Header) + bytes);
-			nh->ensureMapped();
+			nh->ensureMapped(directory);
 			nh->magic          = Header::Magic;
 			nh->left           = NULL;
 			nh->right          = NULL;
@@ -126,7 +123,7 @@ void *Heap::alloc(siz bytes) {
 			// adjust the old header
 			h->allocationSize = bytes + sizeof(Header);
 		}
-		h->ensureMapped(true);
+		h->ensureMapped(directory, true);
 		return (void *)((uptr)h + sizeof(Header));
 	}
 }
@@ -173,7 +170,7 @@ void *Heap::alloc_a(siz bytes) {
 			uptr newStart = addrStart - sizeof(Header);
 			// populate the new header
 			Header *newHeader = (Header *)newStart;
-			newHeader->ensureMapped();
+			newHeader->ensureMapped(directory);
 			newHeader->magic = Header::Magic | 1;
 			newHeader->left = newHeader->right = NULL;
 			// this is the additional amount of memory that
@@ -220,7 +217,7 @@ void *Heap::alloc_a(siz bytes) {
 		// a new huge object, i.e. of size BlockEnd + 1
 		if(header->allocationSize > bytes + sizeof(Header) + BlockEnd) {
 			Header *nh = (Header *)((uptr)header + sizeof(Header) + bytes);
-			nh->ensureMapped();
+			nh->ensureMapped(directory);
 			nh->magic          = Header::Magic;
 			nh->left           = NULL;
 			nh->right          = NULL;
@@ -232,7 +229,7 @@ void *Heap::alloc_a(siz bytes) {
 			// adjust the old header
 			header->allocationSize = bytes + sizeof(Header);
 		}
-		header->ensureMapped(true);
+		header->ensureMapped(directory, true);
 		return (void *)((uptr)header + sizeof(Header));
 	}
 }
@@ -264,9 +261,7 @@ void Heap::free(void *mem) {
 			// we can only do this because we know
 			// startMem is page aligned and has size
 			// equal to the page size
-			Paging::getPage((uptr)b->startMem, false,
-			                Paging::Directory::CurrentDirectory)
-			    ->free();
+			Paging::getPage((uptr)b->startMem, false, directory)->free();
 		}
 		// otherwise, we may also want to add this bucket to the front
 		// of its size class, but that may generate unnecessary additional
@@ -336,9 +331,7 @@ Heap::Bucket *Heap::allocBucket(siz size, siz cls) {
 		b           = freeBuckets;
 		freeBuckets = freeBuckets->nextBucket;
 		// map the page
-		Paging::getPage((uptr)b->startMem, false,
-		                Paging::Directory::CurrentDirectory)
-		    ->alloc(true, true);
+		Paging::getPage((uptr)b->startMem, false, directory)->alloc(true, true);
 		b->init(size);
 	} else {
 		if(bucketAllocationCurrent > bucketAllocationEnd) {
@@ -351,8 +344,7 @@ Heap::Bucket *Heap::allocBucket(siz size, siz cls) {
 		b       = &buckets[idx];
 		b       = Bucket::create(size, (uptr)b, bucketAllocationCurrent);
 		// if the page is not yet allocated, alloc it
-		Paging::getPage((uptr)bucketAllocationCurrent, true,
-		                Paging::Directory::CurrentDirectory)
+		Paging::getPage((uptr)bucketAllocationCurrent, true, directory)
 		    ->alloc(true, true);
 		bucketAllocationCurrent += BucketSize;
 	}
@@ -423,7 +415,7 @@ void Heap::removeHeader(Header *h, Header **slot) {
 	if(h->left && h->right) {
 		// find the inorder successor
 		Header **childSlot    = &h->right;
-		Header * inorder_succ = h->right;
+		Header  *inorder_succ = h->right;
 		while(inorder_succ->left) {
 			childSlot    = &inorder_succ->left;
 			inorder_succ = inorder_succ->left;
@@ -445,14 +437,12 @@ void Heap::removeHeader(Header *h, Header **slot) {
 	h->left = h->right = NULL;
 }
 
-void Heap::Header::ensureMapped(bool full) {
+void Heap::Header::ensureMapped(Paging::Directory *directory, bool full) {
 	// map the first page
-	Paging::getPage((uptr)this, true, Paging::Directory::CurrentDirectory)
-	    ->alloc(true, true);
+	Paging::getPage((uptr)this, true, directory)->alloc(true, true);
 	if(full) {
 		for(uptr i = (uptr)this + Paging::PageSize;
 		    i < (uptr)this + allocationSize; i += Paging::PageSize)
-			Paging::getPage(i, true, Paging::Directory::CurrentDirectory)
-			    ->alloc(true, true);
+			Paging::getPage(i, true, directory)->alloc(true, true);
 	}
 }

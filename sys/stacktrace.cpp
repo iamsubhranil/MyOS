@@ -1,9 +1,12 @@
 #include <drivers/terminal.h>
+#include <sched/scheduler.h>
 #include <sys/stacktrace.h>
 
 void Stacktrace::print() {
 	Terminal::write("\t\tStack Trace\n");
 	Terminal::write("===========================\n");
+	Terminal::write("Current task: ", (i32)Scheduler::getCurrentTask()->id,
+	                "\n");
 	PROMPT_INIT("At", Green);
 	StackFrame *stk;
 	asm("mov %%ebp,%0" : "=r"(stk)::);

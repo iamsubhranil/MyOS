@@ -122,6 +122,8 @@ struct Paging {
 	static void  init(Multiboot *boot);
 	static void  switchPageDirectory(Directory *newDirectory);
 	static Page *getPage(uptr address, bool createIfAbsent, Directory *dir);
+	static Page *getPage_noheap(uptr address, bool createIfAbsent,
+	                            Directory *dir);
 	// get a free page from the given directory. the address to which
 	// the page points will be set on 'address'.
 	// if physicalAddress is specified, the allocated page will point

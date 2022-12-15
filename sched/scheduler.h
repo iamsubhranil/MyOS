@@ -48,8 +48,9 @@ struct Scheduler {
 	// once it is available.
 	template <typename T, typename... F>
 	static Future<T> *submit(T (*run)(F... args), F... args) {
-		Future<T> *result = Memory::create<Future<T>>();
-		Task      *t      = Memory::create<Task>();
+		// result has to be accessible from both the tasks
+		Future<T> *result = Memory::kcreate<Future<T>>();
+		Task      *t      = Memory::kcreate<Task>();
 		t->runner         = (void *)run;
 		prepare(t, (void *)result, (void *)&Future<T>::set, sizeof...(args));
 		uptr *stk = (uptr *)t->regs.useless_esp;

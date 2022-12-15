@@ -1,3 +1,4 @@
+#include <drivers/terminal.h>
 #include <sched/future.h>
 #include <sched/scheduler.h>
 
@@ -9,6 +10,9 @@ FutureBase::FutureBase() {
 
 void FutureBase::awakeAllNoLock() {
 	isAvailable = true;
+	// Terminal::write("Future :", (void *)this,
+	//                " Scheduling: ", (void *)waitingTasks, "\n");
+	// Terminal::write("Scheduling ", (void *)waitingTasks, "\n");
 	while(waitingTasks) {
 		Task *nextTask           = waitingTasks->nextInList;
 		waitingTasks->nextInList = NULL;
@@ -20,12 +24,14 @@ void FutureBase::awakeAllNoLock() {
 void FutureBase::waitTillAvailable() {
 	lock.lock();
 	if(!isAvailable) {
-		Task * s         = (Task *)Scheduler::getCurrentTask();
+		Task  *s         = (Task *)Scheduler::getCurrentTask();
 		Task **insertPos = &waitingTasks;
 		while(*insertPos) {
 			insertPos = &(*insertPos)->nextInList;
 		}
 		*insertPos = (Task *)s;
+		// Terminal::write("Future :", (void *)this,
+		//                " Unscheduling: ", (void *)waitingTasks, "\n");
 		Scheduler::unschedule(lock); // the task will return from here,
 		                             // already unlocked
 	} else {
