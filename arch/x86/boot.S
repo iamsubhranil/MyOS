@@ -20,15 +20,11 @@ forced to be within the first 8 KiB of the kernel file.
 .long MAGIC
 .long FLAGS
 .long CHECKSUM
-.long 0x00000000 // header_addr
-.long 0x00000000 // load_addr
-.long 0x00000000 // load_end_addr
-.long 0x00000000 // bss_end_addr
-.long 0x00000000 // entry_addr
+.skip 24
 .long 0 // linear framebuffer
 .long 1024 // width
 .long 768 // height
-.long 32 // bpp
+.long 0 // bpp
 
 /*
 The multiboot standard does not define the value of the stack pointer register

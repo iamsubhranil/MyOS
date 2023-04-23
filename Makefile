@@ -45,7 +45,7 @@ depend: .depend
 distclean: clean
 	$(RM) *~ .depend
 
-include .depend
+# include .depend
 
 all: release
 release: CXXFLAGS += -O2

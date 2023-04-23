@@ -23,10 +23,10 @@ void Multiboot::dump() const {
 	WRITE(mods_count);
 	WRITEHEX(mods_addr);
 
-	// WRITE(num);
-	// WRITE(size);
-	// WRITE(addr);
-	// WRITE(shndx);
+	WRITE(num);
+	WRITE(size);
+	WRITE(addr);
+	WRITE(shndx);
 
 	WRITE(mmap_length);
 	WRITEHEX(mmap_addr);
