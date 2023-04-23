@@ -1,12 +1,7 @@
 #include <arch/x86/kernel_layout.h>
 
-/* Declare constants for the multiboot header. */
-.set ALIGN,     1<<0            /* align loaded modules on page boundaries */
-.set MEMINFO,   1<<1            /* provide memory map */
-.set VIDEO,     1<<2            /* provide info about video mode */
-.set FLAGS,    ALIGN | MEMINFO | VIDEO  /* this is the Multiboot 'flag' field */
-.set MAGIC,    0x1BADB002       /* 'magic number' lets bootloader find the header */
-.set CHECKSUM, -(MAGIC + FLAGS) /* checksum of above, to prove we are multiboot */
+.set MAGIC, 0xE85250D6       /* 'magic number' lets bootloader find the header */
+.set ARCH_i386, 0
 
 /* 
 Declare a multiboot header that marks the program as a kernel. These are magic
@@ -16,20 +11,63 @@ search for this signature in the first 8 KiB of the kernel file, aligned at a
 forced to be within the first 8 KiB of the kernel file.
 */
 .section .multiboot
-.align 4
+.align 8
+mboot_start:
 .long MAGIC
-.long FLAGS
+.long ARCH_i386  // arch 0 -> i386
+.long mboot_end - mboot_start         // total length = header -> 16, tags -> 64
+.set CHECKSUM, -(MAGIC + (mboot_end - mboot_start))
 .long CHECKSUM
-.long 0x00000000 // header_addr
-.long 0x00000000 // load_addr
-.long 0x00000000 // load_end_addr
-.long 0x00000000 // bss_end_addr
-.long 0x00000000 // entry_addr
-.long 0 // linear framebuffer
+
+/*
+// information request
+information_tag:
+.align 8
+.short 1 // type 1
+.short 0 // flags 0
+.long entry_tag - information_tag // size 28
+.long 1 // cmdline
+.long 3 // modules
+.long 6 // memory map
+.long 9 // elf symbols
+.long 8 // framebuffer
+*/
+/*
+// address tag
+.align 8
+address_tag:
+.short 2 // type 2
+.short 0 // flags 0
+.long entry_tag - address_tag // size 24
+.long mboot_start - 0xC0000000 // header_addr
+.long mboot_end - 0xC0000000 // load_addr
+.long __load_end // load_end_addr
+.long __bss_end // bss_end_addr
+*/
+// entry tag
+entry_tag:
+.align 8
+.short 3 // type 3
+.short 0 // flags 0
+.long framebuffer_tag - entry_tag // size 12
+.long _start - 0xC0000000 // entry_addr
+
+// framebuffer tag
+framebuffer_tag:
+.align 8
+.short 5 // type 5
+.short 0 // flags 0
+.long end_tag - framebuffer_tag // size 20
 .long 1024 // width
 .long 768 // height
 .long 32 // bpp
 
+// end tag
+end_tag:
+.align 8
+.long 0 // type 0, flags 0
+.long 8 // size 8
+mboot_end:
 /*
 The multiboot standard does not define the value of the stack pointer register
 (esp) and it is up to the kernel to provide a stack. This allocates room for a

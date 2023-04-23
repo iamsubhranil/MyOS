@@ -2,13 +2,14 @@
 #include <drivers/terminal.h>
 #include <sys/string.h>
 
-#ifdef MYOS_USE_MULTIBOOT2
+// #ifdef MYOS_USE_MULTIBOOT2
 
-#define MEMF(x) Terminal::write(#x ": ", x(), "\n");
+#define MEMF(x) Terminal::write(#x ": ", (uptr)x(), "\n");
 #define MEM(x) Terminal::write(#x ": ", x, "\n");
-#define MEMHEX(x) Terminal::write(#x ": ", Terminal::Mode::HexOnce, x, "\n");
+#define MEMHEX(x) \
+	Terminal::write(#x ": ", Terminal::Mode::HexOnce, (uptr)x, "\n");
 #define MEMFHEX(x) Terminal::write(#x ": ", Terminal::Mode::HexOnce, x(), "\n");
-#define MEMSTR(x) Terminal::write(#x ": ", (char *)((uptr)x), "\n");
+#define MEMSTR(x) Terminal::write(#x ": ", (const char *)((uptr)x), "\n");
 
 void Multiboot2::Module::dump() const {
 	MEMHEX(mod_start);
@@ -53,7 +54,7 @@ void Multiboot2::Vbe::dump() const {
 	MEMHEX(interface_off);
 	MEMHEX(interface_len);
 	Terminal::write("\nControlInfo:\n");
-	MEMSTR(control_info.signature);
+	MEMHEX(control_info.signature);
 	MEMHEX(control_info.version);
 	MEMSTR(control_info.oemStringPtr);
 	MEMHEX(control_info.capabilities);
@@ -79,11 +80,84 @@ void Multiboot2::Vbe::dump() const {
 	MEM(mode_info.off_screen_mem_size);
 }
 
+void Multiboot2::ElfSections::dump() const {
+	MEMHEX(num);
+	MEMHEX(entsize);
+	MEMHEX(sections());
+	MEMHEX(shndx);
+}
+
+void Multiboot2::Apm::dump() const {
+	MEMHEX(version);
+	MEMHEX(cseg);
+	MEMHEX(offset);
+	MEMHEX(cseg_16);
+	MEMHEX(dseg);
+	MEMHEX(flags);
+	MEMHEX(cseg_len);
+	MEMHEX(cseg_16_len);
+	MEMHEX(dseg_len);
+}
+
+void Multiboot2::Efi32::dump() const {
+	MEMHEX(pointer);
+}
+
+void Multiboot2::Efi64::dump() const {
+	MEMHEX(pointer);
+}
+
+void Multiboot2::SMBios::dump() const {
+	MEMHEX(major);
+	MEMHEX(minor);
+	MEMF(tables);
+}
+
+void Multiboot2::AcpiOld::dump() const {
+	MEMF(rsdp);
+}
+
+void Multiboot2::AcpiNew::dump() const {
+	MEMF(rsdp);
+}
+
+void Multiboot2::Network::dump() const {
+	MEMF(dhcpack);
+}
+
+void Multiboot2::EfiMmap::dump() const {
+	MEMHEX(descr_size);
+	MEMHEX(descr_vers);
+	MEMF(efi_mmap);
+}
+
+void Multiboot2::Efi32Ih::dump() const {
+	MEMHEX(pointer);
+}
+
+void Multiboot2::Efi64Ih::dump() const {
+	MEMHEX(pointer);
+}
+
+void Multiboot2::LoadBaseAddr::dump() const {
+	MEMHEX(load_base_addr);
+}
+
+void Multiboot2::Framebuffer::dump() const {
+	MEMHEX(addr);
+	MEM(pitch);
+	MEM(width);
+	MEM(height);
+	MEM(bpp);
+	MEM((uptr)type);
+}
+
 bool Multiboot2::Tag::parse(Multiboot2 *multiboot) {
 	switch(type) {
 		case Type::End: Terminal::write("[Section] End\n"); return false;
 		default:
-			Terminal::warn("Ignoring unknown multiboot tag '", type, "'!");
+			Terminal::warn("Ignoring unknown multiboot tag '", (uptr)type,
+			               "'!");
 			break;
 		case Type::BootloaderName:
 			multiboot->bootloaderName = (char *)(this + 1);
@@ -128,7 +202,8 @@ bool Multiboot2::Tag::parse(Multiboot2 *multiboot) {
 			break;
 		case Type::ElfSections:
 			multiboot->elfSections = (Multiboot2::ElfSections *)this;
-			Terminal::write("[Section] ElfSections\n");
+			Terminal::write("[Section] ElfSections ", Terminal::Mode::HexOnce,
+			                (uptr)this, "\n");
 			multiboot->elfSections->dump();
 			break;
 		case Type::Apm:
@@ -187,13 +262,18 @@ bool Multiboot2::Tag::parse(Multiboot2 *multiboot) {
 			multiboot->loadBaseAddr->dump();
 			break;
 	}
-	multiboot->nextTag = (Tag *)((uptr)multiboot->nextTag + size);
+	uptr nextTag        = (uptr)multiboot->nextTag + size;
+	uptr nextTagAligned = (nextTag + 7) & ~7;
+	multiboot->nextTag  = (Tag *)(nextTagAligned);
 	return true;
 }
 
 Multiboot2 Multiboot2::parse(uptr addr) {
 	Multiboot2 m;
 	memset(&m, 0, sizeof(Multiboot2));
+	// ignore total size and reserved
+	Terminal::write("Total size: ", *(uptr *)(addr), "\n");
+	addr += 8;
 	m.nextTag = (Tag *)addr;
 	// parse all tags
 	while(m.nextTag->parse(&m))
@@ -201,4 +281,4 @@ Multiboot2 Multiboot2::parse(uptr addr) {
 	return m;
 }
 
-#endif
+// #endif

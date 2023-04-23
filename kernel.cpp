@@ -3,7 +3,7 @@
 #include <arch/x86/idt.h>
 #include <arch/x86/irq.h>
 #include <arch/x86/kernel_layout.h>
-#include <boot/multiboot.h>
+#include <boot/multiboot2.h>
 #include <drivers/io.h>
 #include <drivers/keycodes.h>
 #include <drivers/terminal.h>
@@ -125,16 +125,17 @@ void finishableTask() {
 }
 
 // entry-point
-void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
+void kernelMain(uptr mb, uptr stack_, uptr useless0, uptr useless1) {
 	(void)stack_;
 	(void)useless0;
 	(void)useless1;
 
+	Multiboot2 mboot = Multiboot2::parse(mb);
 	// Terminal::CurrentOutput = Terminal::Output::VGA;
-	Terminal::init(mboot);
-	mboot->dump();
+	// Terminal::init(mboot);
+	// mboot->dump();
 	// reinit paging
-	Paging::init(mboot);
+	// Paging::init(mboot);
 	// disable interrupts before setting up gdt, idt and irqs
 	Asm::cli();
 	GDT::init();

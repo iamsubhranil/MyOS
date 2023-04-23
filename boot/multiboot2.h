@@ -24,7 +24,7 @@
 
 #include <sys/myos.h>
 
-#ifdef MYOS_USE_MULTIBOOT2
+// #ifdef MYOS_USE_MULTIBOOT2
 
 /* How many bytes from the start of the file we search for the header.  */
 #define MULTIBOOT_SEARCH 32768
@@ -52,7 +52,7 @@ struct Multiboot2 {
 		u8 red;
 		u8 green;
 		u8 blue;
-	};
+	} __attribute__((packed));
 
 	struct Tag {
 
@@ -86,25 +86,25 @@ struct Multiboot2 {
 		// advances the nextTag pointer by size.
 		// only the End tag returns false, everyone else returns true.
 		bool parse(Multiboot2 *multiboot);
-	};
+	} __attribute__((packed));
 
 	// There can be multiple modules present
 	struct Module {
-		Tag   tag;
-		u32   mod_start;
-		u32   mod_end;
-		char *cmdline() const {
-			return ((char *)this + 1);
+		Tag         tag;
+		u32         mod_start;
+		u32         mod_end;
+		const char *cmdline() const {
+			return (char *)(this + 1);
 		}
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct BasicMeminfo {
 		Tag  tag;
 		u32  mem_lower;
 		u32  mem_upper;
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Bootdev {
 		Tag  tag;
@@ -112,7 +112,7 @@ struct Multiboot2 {
 		u32  slice;
 		u32  part;
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Mmap {
 		Tag tag;
@@ -138,7 +138,7 @@ struct Multiboot2 {
 			return (Entry *)(this + 1);
 		}
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Vbe {
 		Tag tag;
@@ -204,12 +204,12 @@ struct Multiboot2 {
 			                         // but not being displayed on the
 			                         // screen
 			u8 reserved1[206];
-		};
+		} __attribute__((packed));
 
 		ControlInfo control_info;
 		ModeInfo    mode_info;
 		void        dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Framebuffer {
 		Tag tag;
@@ -237,21 +237,75 @@ struct Multiboot2 {
 				u8 blue_field_position;
 				u8 blue_mask_size;
 			};
-		};
+		} __attribute__((packed));
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct ElfSections {
-		u32   type;
-		u32   size;
-		u32   num;
-		u32   entsize;
-		u32   shndx;
-		char *sections() const {
-			return (char *)(this + 1);
+		Tag tag;
+		u16 num;
+		u16 entsize;
+		u16 shndx;
+		u16 reserved;
+
+		enum Type : u32 {
+			Null          = 0,
+			Progbits      = 1,
+			Symtab        = 2,
+			Strtab        = 3,
+			Rela          = 4,
+			Hash          = 5,
+			Dynamic       = 6,
+			Note          = 7,
+			Nobits        = 8,
+			Rel           = 9,
+			Shlib         = 10,
+			Dynsym        = 11,
+			Init_Array    = 14,
+			Fini_Array    = 15,
+			Preinit_Array = 16,
+			Group         = 17,
+			Symtab_Shndx  = 18,
+			Loos          = 0x60000000,
+			Hios          = 0x6fffffff,
+			Loproc        = 0x70000000,
+			Hiproc        = 0x7fffffff,
+			Louser        = 0x80000000,
+			Hiuser        = 0xffffffff
+		};
+
+		enum Flags : u32 {
+			Write            = 0x1,
+			Alloc            = 0x2,
+			ExecInstr        = 0x4,
+			Merge            = 0x10,
+			Strings          = 0x20,
+			Info_Link        = 0x40,
+			Link_Order       = 0x80,
+			Os_NonConforming = 0x100,
+			Group_           = 0x200,
+			Tls              = 0x400,
+			MaskOs           = 0x0ff00000,
+			MaskProc         = 0xf0000000
+		};
+
+		struct Header32 {
+			u32   name;
+			Type  type;
+			Flags flags;
+			u32   addr;
+			u32   offset;
+			u32   size;
+			u32   link;
+			u32   info;
+			u32   addralign;
+			u32   entsize;
+		} __attribute__((packed));
+		Header32 *sections() const {
+			return (Header32 *)(this + 1);
 		}
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Apm {
 		Tag  tag;
@@ -265,19 +319,19 @@ struct Multiboot2 {
 		u16  cseg_16_len;
 		u16  dseg_len;
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Efi32 {
 		Tag  tag;
 		u32  pointer;
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Efi64 {
 		Tag  tag;
 		u64  pointer;
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct SMBios {
 		Tag tag;
@@ -288,7 +342,7 @@ struct Multiboot2 {
 			return (u8 *)(this + 1);
 		}
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct AcpiOld {
 		Tag tag;
@@ -296,7 +350,7 @@ struct Multiboot2 {
 			return (u8 *)(this + 1);
 		}
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct AcpiNew {
 		Tag tag;
@@ -304,7 +358,7 @@ struct Multiboot2 {
 			return (u8 *)(this + 1);
 		}
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Network {
 		Tag tag;
@@ -312,7 +366,7 @@ struct Multiboot2 {
 			return (u8 *)(this + 1);
 		}
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct EfiMmap {
 		Tag tag;
@@ -322,53 +376,53 @@ struct Multiboot2 {
 			return (u8 *)(this + 1);
 		}
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Efi32Ih {
 		Tag  tag;
 		u32  pointer;
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct Efi64Ih {
 		Tag  tag;
 		u64  pointer;
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	struct LoadBaseAddr {
 		Tag  tag;
 		u32  load_base_addr;
 		void dump() const;
-	};
+	} __attribute__((packed));
 
 	// Virtual address pointers to each section, NULL sigifies not present
-	AcpiNew *     acpiNew;
-	AcpiOld *     acpiOld;
-	Apm *         apm;
+	AcpiNew      *acpiNew;
+	AcpiOld      *acpiOld;
+	Apm          *apm;
 	BasicMeminfo *basicMemInfo;
-	Bootdev *     bootdev;
-	const char *  bootloaderName;
-	const char *  cmdline;
-	EfiMmap *     efiMmap;
-	Efi32 *       efi32;
-	Efi64 *       efi64;
-	Efi32Ih *     efi32ih;
-	Efi64Ih *     efi64ih;
-	ElfSections * elfSections;
-	Framebuffer * framebuffer;
+	Bootdev      *bootdev;
+	const char   *bootloaderName;
+	const char   *cmdline;
+	EfiMmap      *efiMmap;
+	Efi32        *efi32;
+	Efi64        *efi64;
+	Efi32Ih      *efi32ih;
+	Efi64Ih      *efi64ih;
+	ElfSections  *elfSections;
+	Framebuffer  *framebuffer;
 	LoadBaseAddr *loadBaseAddr;
-	Mmap *        mmap;
-	Module *      modules[256]; // multiple modules can be present
+	Mmap         *mmap;
+	Module       *modules[256]; // multiple modules can be present
 	u32           moduleCount;
-	Network *     network;
-	SMBios *      smbios;
-	Vbe *         vbe;
+	Network      *network;
+	SMBios       *smbios;
+	Vbe          *vbe;
 	// address of the next tag to be parsed
 	Tag *nextTag;
 
 	// address of the multiboot section
 	static Multiboot2 parse(uptr addr);
-};
+} __attribute__((packed));
 
-#endif
+// #endif

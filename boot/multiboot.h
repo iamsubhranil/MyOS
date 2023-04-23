@@ -29,10 +29,12 @@ struct Multiboot {
 	u32 cmdline;
 	u32 mods_count;
 	u32 mods_addr;
+	// elf32 info
 	u32 num;
 	u32 size;
 	u32 addr;
 	u32 shndx;
+	// ==========
 	u32 mmap_length;
 	u32 mmap_addr;
 	u32 drives_length;

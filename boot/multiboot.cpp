@@ -68,6 +68,11 @@ void Multiboot::dump() const {
 		Terminal::write("\n");
 	}
 
+	WRITE(num);
+	WRITE(size);
+	WRITE(addr);
+	WRITE(shndx);
+
 	// WRITE(drives_length);
 	// WRITEHEX(drives_addr);
 	// WRITE(config_table);
