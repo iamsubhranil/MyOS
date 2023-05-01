@@ -50,16 +50,31 @@ struct Paging {
 		static bool searchInRange(uptr from_index, uptr to_index, uptr &result);
 	};
 
-	// 'unused' crosses byte boundary, but we disable the warning in Makefile
 	struct Page {
-		u8  present : 1;  // Page present in memory
-		u8  rw : 1;       // Read-only if clear, readwrite if set
-		u8  user : 1;     // Supervisor level only if clear
-		u8  accessed : 1; // Has the page been accessed since last refresh?
-		u8  dirty : 1;    // Has the page been written to since last refresh?
-		u8  unused : 7;   // Amalgamation of unused and reserved bits
-		u32 frame : 20;   // Frame address (shifted right 12 bits)
-
+		u8 present : 1;   // Page present in memory
+		u8 rw : 1;        // Read-only if clear, readwrite if set
+		u8 user : 1;      // Supervisor level only if clear
+		u8 accessed : 1;  // Has the page been accessed since last
+		                  // refresh?
+		u8 dirty : 1;     // Has the page been written to since last
+		                  // refresh?
+		u8 os_shared : 1; // Is the page shared between multiple tasks?
+		u8 unused_1 : 2;  // unused
+		// if present is 0, the processor ignores all other bits,
+		// so we use them however we want
+		// we mark custom flags with os_*
+		union {
+			// struct that represents an in-memory page
+			struct {
+				u16 unused_2 : 4; // unused
+				u32 frame : 20;   // Frame address (shifted right 12 bits)
+			} __attribute__((packed)) inmem;
+			// struct that represent a page not in memory
+			struct {
+				u8  os_avail : 1;   // marks if the page is available to alloc
+				u32 os_unused : 23; // unused bits for now
+			} __attribute__((packed)) outmem;
+		} __attribute__((packed));
 		// optionally takes the last allocated frame index to pass
 		// to findFirstFreeFrame, so that it does not start searching
 		// from the beginning.

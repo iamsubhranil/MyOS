@@ -58,11 +58,11 @@ release: QEMUFLAGS = -serial stdio
 release: linker start
 
 debug: CXXFLAGS += -O0 -g3 -fno-omit-frame-pointer
-debug: QEMUFLAGS += -no-shutdown -no-reboot -serial mon:stdio
+debug: QEMUFLAGS += -no-shutdown -no-reboot -nographic -serial mon:stdio
 debug: linker start
 
 debug_iso: CXXFLAGS += -O0 -g3 -fno-omit-frame-pointer
-debug_iso: QEMUFLAGS = -no-shutdown -no-reboot -serial mon:stdio -S -s
+debug_iso: QEMUFLAGS = -no-shutdown -no-reboot -nographic -serial mon:stdio -S -s
 debug_iso: linker iso
 
 debug_gdb: QEMUFLAGS += -S -s

@@ -64,9 +64,18 @@ bool Paging::Frame::findFirstFreeFrame(uptr &result, uptr lastFrame) {
 }
 
 u32 Paging::Page::dump() const {
-	u32 res = Terminal::write("Page (frame: ", frame, " ");
+	u32 res = Terminal::write("Page ( ");
 	if(present) {
 		res += Terminal::write("present ");
+		res += Terminal::write("frame: ", inmem.frame, " ");
+		if(os_shared) {
+			res += Terminal::write("shared ");
+		}
+	} else {
+		res += Terminal::write("notpresent ");
+		if(outmem.os_avail) {
+			res += Terminal::write("os_avail");
+		}
 	}
 	if(rw) {
 		res += Terminal::write("read-only ");
@@ -80,9 +89,9 @@ u32 Paging::Page::dump() const {
 
 uptr Paging::Page::alloc(bool isKernel, bool isWritable, uptr lastFrame) {
 	// Terminal::write(*this);
-	if(frame) {
+	if(inmem.frame) {
 		// Terminal::write(" -> No alloc!\n");
-		return frame;
+		return inmem.frame;
 	}
 	siz idx;
 	if(!Frame::findFirstFreeFrame(idx, lastFrame)) {
@@ -95,29 +104,29 @@ uptr Paging::Page::alloc(bool isKernel, bool isWritable, uptr lastFrame) {
 			;
 	}
 	Frame::set(idx * Paging::PageSize);
-	present = 1;
-	rw      = isWritable;
-	user    = !isKernel;
-	frame   = idx;
+	present     = 1;
+	rw          = isWritable;
+	user        = !isKernel;
+	inmem.frame = idx;
 	// Terminal::write(" -> Alloc to frame ", frame, "\n");
-	return frame;
+	return inmem.frame;
 }
 
 uptr Paging::Page::allocDMA(bool isKernel, bool isWritable, uptr physicalAddr) {
-	present = 1;
-	rw      = isWritable;
-	user    = !isKernel;
-	frame   = physicalAddr >> 12;
+	present     = 1;
+	rw          = isWritable;
+	user        = !isKernel;
+	inmem.frame = physicalAddr >> 12;
 	// Terminal::write(" -> Alloc to frame ", frame, "\n");
-	return frame;
+	return inmem.frame;
 }
 
 void Paging::Page::free() {
-	if(!frame)
+	if(!inmem.frame)
 		return;
-	Frame::clear(frame * Paging::PageSize);
-	frame   = 0;
-	present = 0;
+	Frame::clear(inmem.frame * Paging::PageSize);
+	inmem.frame = 0;
+	present     = 0;
 }
 
 void Paging::Frame::init(Multiboot *boot) {
@@ -229,9 +238,10 @@ Paging::Page *Paging::getFreePage(Paging::Directory *dir, uptr &address,
 		// check for a free page
 		Table *t = dir->tables[i];
 		for(siz j = 0; j < Paging::PagesPerTable; j++) {
-			if(t->pages[j].frame == 0) { // it is free, so allocate and return
-				                         // this. we actually need to alloc here
-				                         // to mark it as used.
+			if(t->pages[j].inmem.frame ==
+			   0) { // it is free, so allocate and return
+				    // this. we actually need to alloc here
+				    // to mark it as used.
 				p       = &t->pages[j];
 				address = ((i * Paging::PagesPerTable) + j) * Paging::PageSize;
 				break;
@@ -255,12 +265,12 @@ Paging::Page *Paging::getFreePage(Paging::Directory *dir, uptr &address,
 	if(!physicalAddress.has) {
 		p->alloc(false, true);
 	} else {
-		p->frame    = physicalAddress.value;
-		p->present  = 1;
-		p->rw       = 1;
-		p->user     = 1;
-		p->dirty    = 0;
-		p->accessed = 0;
+		p->inmem.frame = physicalAddress.value;
+		p->present     = 1;
+		p->rw          = 1;
+		p->user        = 1;
+		p->dirty       = 0;
+		p->accessed    = 0;
 		Frame::set(physicalAddress.value);
 	}
 	return p;
@@ -273,8 +283,8 @@ void Paging::resetPage(uptr address, Paging::Directory *dir, bool soft) {
 		if(!soft) {
 			dir->tables[table_idx]->pages[pageno].free();
 		} else {
-			dir->tables[table_idx]->pages[pageno].frame   = 0;
-			dir->tables[table_idx]->pages[pageno].present = 0;
+			dir->tables[table_idx]->pages[pageno].inmem.frame = 0;
+			dir->tables[table_idx]->pages[pageno].present     = 0;
 		}
 		Asm::invlpg(address);
 	}
@@ -334,7 +344,7 @@ Paging::Table *Paging::Table::clone(uptr &phys, siz table_idx,
 	phys = Paging::getPhysicalAddress((uptr)table);
 
 	for(siz i = 0; i < Paging::PagesPerTable; i++) {
-		if(!pages[i].frame) { // unallocated page, don't bother
+		if(!pages[i].inmem.frame) { // unallocated page, don't bother
 			continue;
 		}
 		// the temp page already contains an allocated frame,
@@ -344,9 +354,9 @@ Paging::Table *Paging::Table::clone(uptr &phys, siz table_idx,
 		       (void *)(uptr)(pageCopyAddress), Paging::PageSize);
 
 		// copy the frame
-		table->pages[i].frame = pageCopyTemp->frame;
+		table->pages[i].inmem.frame = pageCopyTemp->inmem.frame;
 		// reset the frame of the temporary page
-		pageCopyTemp->frame = 0;
+		pageCopyTemp->inmem.frame = 0;
 		// allocate a new frame for next iteration
 		pageCopyTemp->alloc(false, true);
 
@@ -365,7 +375,8 @@ void Paging::Directory::dump() const {
 		if(tables[i]) {
 			siz j = 0;
 			while(1) {
-				while(j < PagesPerTable && tables[i]->pages[j].frame == 0) j++;
+				while(j < PagesPerTable && tables[i]->pages[j].inmem.frame == 0)
+					j++;
 				if(j == PagesPerTable)
 					break;
 				Terminal::write("First present page: ", j, "\n");
@@ -434,9 +445,10 @@ uptr Paging::getPhysicalAddress(uptr virtualAddress, Paging::Directory *dir) {
 }
 
 uptr Paging::Directory::getPhysicalAddress(uptr virtualAddress) const {
-	siz  tbl           = getTableIndex(virtualAddress);
-	siz  page          = getPageNo(virtualAddress);
-	uptr physicalStart = tables[tbl]->pages[page].frame * Paging::PageSize;
+	siz  tbl  = getTableIndex(virtualAddress);
+	siz  page = getPageNo(virtualAddress);
+	uptr physicalStart =
+	    tables[tbl]->pages[page].inmem.frame * Paging::PageSize;
 	physicalStart += (virtualAddress) & (Paging::PageSize - 1);
 	return physicalStart;
 }
