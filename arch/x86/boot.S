@@ -24,7 +24,7 @@ forced to be within the first 8 KiB of the kernel file.
 .long 0 // linear framebuffer
 .long 1024 // width
 .long 768 // height
-.long 0 // bpp
+.long 32 // bpp
 
 /*
 The multiboot standard does not define the value of the stack pointer register

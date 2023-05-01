@@ -23,10 +23,37 @@ void Multiboot::dump() const {
 	WRITE(mods_count);
 	WRITEHEX(mods_addr);
 
-	WRITE(num);
-	WRITE(size);
-	WRITE(addr);
-	WRITE(shndx);
+	if(flags & (1 << 5)) {
+		WRITE(num);
+		WRITE(size);
+		WRITE(addr);
+		WRITE(shndx);
+
+		Elf32::Header *headers     = (Elf32::Header *)P2V(addr);
+		char          *strtab      = NULL;
+		u32            strtab_size = 0;
+		Elf32::Symtab *symtab      = NULL;
+		u32            symtab_size = 0;
+		for(u32 i = 0; i < num; i++) {
+			Elf32::Header h = headers[i];
+			if(h.type == Elf32::Header::Type::Strtab) {
+				strtab      = (char *)P2V(h.addr);
+				strtab_size = h.size;
+			} else if(h.type == Elf32::Header::Type::Symtab) {
+				symtab      = (Elf32::Symtab *)P2V(h.addr);
+				symtab_size = h.size;
+			}
+		}
+
+		if(symtab == NULL || strtab == NULL) {
+			Terminal::warn("ELF symbols not loaded! Stacktrace will not "
+			               "contain symbol names!");
+		} else {
+			Terminal::write(
+			    "Symbol and string tables loaded! Symtab: ", symtab_size,
+			    " bytes, Strtab: ", strtab_size, " bytes\n");
+		}
+	}
 
 	WRITE(mmap_length);
 	WRITEHEX(mmap_addr);
@@ -89,4 +116,9 @@ void Multiboot::dump() const {
 	WRITE((u16)frameBuffer.bpp);
 	WRITE((u16)frameBuffer.type);
 	*/
+}
+
+const char *Multiboot::Elf32::Header::getName(const Multiboot *boot) {
+	Header *shStrTab = boot->shndx + (Header *)(uptr)boot->addr;
+	return (char *)(uptr)shStrTab->addr + name;
 }

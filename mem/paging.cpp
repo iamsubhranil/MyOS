@@ -441,6 +441,13 @@ uptr Paging::Directory::getPhysicalAddress(uptr virtualAddress) const {
 	return physicalStart;
 }
 
+void Paging::mapDMAEarly(uptr start, uptr size) {
+	for(uptr i = start; i < start + size; i += Paging::PageSize) {
+		getPage_noheap(i, true, Directory::KernelDirectory)
+		    ->allocDMA(true, true, i);
+	}
+}
+
 void Paging::init(Multiboot *boot) {
 	PROMPT_INIT("Paging", Orange);
 	PROMPT("Setting up paging..");
@@ -470,13 +477,22 @@ void Paging::init(Multiboot *boot) {
 		    (Multiboot::VbeModeInfo *)P2V(boot->vbe_mode_info);
 
 		uptr fbaddr = vbe->physbase;
-		uptr fbend  = fbaddr + vbe->pitch * vbe->Yres;
+		uptr fbsize = vbe->pitch * vbe->Yres;
 		// identity map the fb
-		for(uptr i = fbaddr; i < fbend; i += Paging::PageSize) {
-			// use allocDMA, since we need the page at that particular
-			// physical address specifically
-			getPage_noheap(i, true, Directory::KernelDirectory)
-			    ->allocDMA(true, true, i);
+		mapDMAEarly(fbaddr, fbsize);
+	}
+
+	// check if we have debug info and map them accordingly
+	if(boot->flags & (1 << 5)) {
+		Multiboot::Elf32::Header *headers =
+		    (Multiboot::Elf32::Header *)P2V(boot->addr);
+		for(u32 i = 0; i < boot->num; i++) {
+			Multiboot::Elf32::Header h = headers[i];
+			if(h.type == Multiboot::Elf32::Header::Type::Strtab) {
+				mapDMAEarly(h.addr, h.size);
+			} else if(h.type == Multiboot::Elf32::Header::Type::Symtab) {
+				mapDMAEarly(h.addr, h.size);
+			}
 		}
 	}
 	// We need to create a mapping between our placement address,
@@ -521,6 +537,13 @@ void Paging::init(Multiboot *boot) {
 		Terminal::write(Terminal::Output::VGA);
 		Terminal::init(boot);
 		PROMPT("Switched to VGA from Serial..");
+	}
+
+	// if we have ELF symbols, remap them
+	if(boot->flags & (1 << 5)) {
+		PROMPT("Loading ELF symbols..");
+		Stacktrace::loadSymbols(boot);
+		PROMPT("ELF symbols loaded!");
 	}
 
 	Terminal::done("Paging setup complete!");

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boot/multiboot.h>
 #include <sys/myos.h>
 
 struct Stacktrace {
@@ -8,8 +9,14 @@ struct Stacktrace {
 		uptr        eip;
 	};
 
-	static void print();
-	static void print(void *ebp);
+	struct Symbol {
+		u32 ip;
+		u32 stridx; // index to the string table
+	};
+
+	static void dumpSymbols();
+	static void loadSymbols(Multiboot *boot);
+	static void print(void *ebp = NULL);
 	static void print(uptr ebp) {
 		union {
 			uptr  a;

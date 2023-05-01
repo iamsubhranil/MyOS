@@ -14,7 +14,7 @@ Terminal::Color  Terminal::color         = Terminal::Color::White;
 Terminal::Color  Terminal::previousColor = Terminal::Color::White;
 Terminal::Mode   Terminal::currentMode   = Terminal::Mode::Dec;
 Terminal::Mode   Terminal::previousMode  = Terminal::Mode::Dec;
-u16 *            Terminal::buffer        = 0;
+u16             *Terminal::buffer        = 0;
 SpinLock         Terminal::spinlock      = SpinLock();
 Terminal::Output Terminal::CurrentOutput =
     Terminal::Output::Serial; // default output is serial

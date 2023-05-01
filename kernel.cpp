@@ -12,6 +12,7 @@
 #include <mem/paging.h>
 #include <sched/scheduler.h>
 #include <sched/task.h>
+#include <sys/stacktrace.h>
 #include <sys/syscall.h>
 
 /* Check if the compiler thinks we are targeting the wrong operating system. */

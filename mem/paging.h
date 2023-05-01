@@ -124,6 +124,8 @@ struct Paging {
 	static Page *getPage(uptr address, bool createIfAbsent, Directory *dir);
 	static Page *getPage_noheap(uptr address, bool createIfAbsent,
 	                            Directory *dir);
+	// map DMA memory before the paging orchestration is fully setup
+	static void mapDMAEarly(uptr start, uptr size);
 	// get a free page from the given directory. the address to which
 	// the page points will be set on 'address'.
 	// if physicalAddress is specified, the allocated page will point

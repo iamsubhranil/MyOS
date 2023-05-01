@@ -9,6 +9,8 @@ OBJS := $(patsubst %.cpp,%.o,$(SRCS))
 ASMSRCS := $(wildcard *.S */*.S */*/*.S */*/*/*.S)
 ASMOBJS := $(patsubst %.S,%.o,$(ASMSRCS))
 
+ISODIR=isodir/
+
 %.o: %.cpp
 	$(CXX) -c $< -o $@ $(CXXFLAGS)
 
@@ -18,9 +20,11 @@ ASMOBJS := $(patsubst %.S,%.o,$(ASMSRCS))
 linker: linker.ld $(OBJS) $(ASMOBJS)
 	$(CXX) -T linker.ld -o myos.bin -ffreestanding $(CXXFLAGS) -nostdlib $(OBJS) $(ASMOBJS) -lgcc
 
+iso: CXXFLAGS += -O2 -g2
 iso: linker
-	cp myos.bin isodir/boot/myos.bin
-	cp grub.cfg isodir/boot/grub/grub.cfg
+	mkdir -p $(ISODIR)/boot/grub
+	cp myos.bin isodir/boot/
+	cp grub.cfg isodir/boot/grub/
 	grub-mkrescue -o myos.iso isodir
 	qemu-system-i386 -cdrom myos.iso $(QEMUFLAGS)
 
@@ -35,6 +39,7 @@ gdbstart:
 
 clean:
 	$(RM) -f $(ASMOBJS) $(OBJS) myos.bin
+	$(RM) -rf $(ISODIR)
 
 depend: .depend
 
@@ -48,7 +53,7 @@ distclean: clean
 # include .depend
 
 all: release
-release: CXXFLAGS += -O2
+release: CXXFLAGS += -O2 -g2
 release: QEMUFLAGS = -serial stdio
 release: linker start
 

@@ -147,4 +147,73 @@ struct Multiboot {
 		u8  resvered[206];
 	} __attribute__((packed));
 
+	struct Elf32 {
+
+		struct Header {
+
+			enum Type : u32 {
+				Null          = 0,
+				Progbits      = 1,
+				Symtab        = 2,
+				Strtab        = 3,
+				Rela          = 4,
+				Hash          = 5,
+				Dynamic       = 6,
+				Note          = 7,
+				Nobits        = 8,
+				Rel           = 9,
+				Shlib         = 10,
+				Dynsym        = 11,
+				Init_Array    = 14,
+				Fini_Array    = 15,
+				Preinit_Array = 16,
+				Group         = 17,
+				Symtab_Shndx  = 18,
+				Loos          = 0x60000000,
+				Hios          = 0x6fffffff,
+				Loproc        = 0x70000000,
+				Hiproc        = 0x7fffffff,
+				Louser        = 0x80000000,
+				Hiuser        = 0xffffffff
+			};
+
+			enum Flags : u32 {
+				Write            = 0x1,
+				Alloc            = 0x2,
+				ExecInstr        = 0x4,
+				Merge            = 0x10,
+				Strings          = 0x20,
+				Info_Link        = 0x40,
+				Link_Order       = 0x80,
+				Os_NonConforming = 0x100,
+				Group_           = 0x200,
+				Tls              = 0x400,
+				MaskOs           = 0x0ff00000,
+				MaskProc         = 0xf0000000
+			};
+
+			u32   name;
+			Type  type;
+			Flags flags;
+			u32   addr;
+			u32   offset;
+			u32   size;
+			u32   link;
+			u32   info;
+			u32   addralign;
+			u32   entsize;
+
+			const char *getName(const Multiboot *boot);
+		} __attribute__((packed));
+
+		struct Symtab {
+			u32 name;
+			u32 value;
+			u32 size;
+			u8  info;
+			u8  other;
+			u16 shndx;
+		} __attribute__((packed));
+	};
+
 } __attribute__((packed));
