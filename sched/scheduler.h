@@ -52,7 +52,10 @@ struct Scheduler {
 		Future<T> *result = Memory::kcreate<Future<T>>();
 		Task      *t      = Memory::kcreate<Task>();
 		t->runner         = (void *)run;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpmf-conversions"
 		prepare(t, (void *)result, (void *)&Future<T>::set, sizeof...(args));
+#pragma GCC diagnostic pop
 		uptr *stk = (uptr *)t->regs.useless_esp;
 		// skip the registers
 		stk -= 8;

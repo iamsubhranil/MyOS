@@ -80,7 +80,10 @@ void Scheduler::appendTask(Task *t) {
 			Terminal::warn("Task ", t->id, " is already scheduled!");
 			break;
 		case Task::Waiting:
-		case Task::New: suspend(); suspended = true;
+		case Task::New:
+			suspend();
+			suspended = true;
+			// fall through
 		case Task::Sleeping: // this is called from scheduler_scheduleNext, and
 		                     // we don't really wanna resume inside of that
 			t->state         = Task::State::Scheduled;
