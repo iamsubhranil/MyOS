@@ -20,3 +20,8 @@ For debugging with GDB, do
 $ make debug_gdb
 $ make gdbstart
 ```
+
+# Screenshots
+![Boot0](./img/img0.png)
+![Boot1](./img/img1.png)
+![Boot2](./img/img2.png)
