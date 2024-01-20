@@ -5,7 +5,7 @@
 #include <arch/x86/kernel_layout.h>
 #include <boot/multiboot.h>
 #include <drivers/io.h>
-#include <drivers/keyboard.h>
+#include <drivers/ps2.h>
 #include <drivers/terminal.h>
 #include <drivers/timer.h>
 #include <mem/memory.h>
@@ -146,6 +146,8 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	// the scheduler will set itself up, and then enable
 	// interrupt itself.
 	Scheduler::init();
+	PS2::init();
+
 	for(i32 i = 0; i < 100; i++) {
 		Terminal::write("Line: ", i, "\n");
 	}
