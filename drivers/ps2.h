@@ -19,4 +19,6 @@ struct PS2 {
 
 	static bool readyForInput();
 	static bool readyForOutput();
+
+	static void initDevice(u8 num);
 };

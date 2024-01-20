@@ -1,7 +1,12 @@
+#include <arch/x86/irq.h>
 #include <drivers/io.h>
 #include <drivers/keyboard.h>
+#include <drivers/terminal.h>
+#include <ds/queue.h>
 
-const char *Keycodes::getKey(u8 c) {
+Queue<char> characterQueue = Queue<char>();
+
+const char *Keyboard::getKey(u8 c) {
 	switch(c) {
 		case 0x01: return "escape pressed";
 		case 0x02: return "1 pressed";
@@ -192,7 +197,7 @@ const char *Keycodes::getKey(u8 c) {
 	}
 }
 
-const char *Keycodes::getSecondKey(u8 c) {
+const char *Keyboard::getSecondKey(u8 c) {
 	switch(c) {
 		case 0x1C: return "(keypad) enter pressed";
 		case 0x1d: return "right control pressed";
@@ -230,4 +235,13 @@ const char *Keycodes::getSecondKey(u8 c) {
 		case 0xDd: return "apps released";
 		default: return "Unknown key!";
 	}
+}
+
+void Keyboard::handleKeyboard(Register *r) {
+	(void)r;
+	u8 byte = Asm::inb(0x60);
+	Terminal::info("Read: ", Terminal::Mode::HexOnce, byte, "\n");
+}
+
+void Keyboard::init() {
 }

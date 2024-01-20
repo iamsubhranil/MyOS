@@ -1,4 +1,6 @@
 #include <arch/x86/asm.h>
+#include <arch/x86/irq.h>
+#include <drivers/keyboard.h>
 #include <drivers/ps2.h>
 #include <drivers/terminal.h>
 
@@ -47,6 +49,15 @@ void PS2::sendToDevice(u8 num, u8 command) {
 		return;
 	}
 	Asm::outb(0x60, command);
+	// wait for ACK
+	tsc = Asm::rdtsc();
+	while((Asm::rdtsc() - tsc) < 1000000 || !readyForInput())
+		;
+	if(!readyForInput() || readFromDevice(num) != 0xFA) {
+		Terminal::err("Command ", Terminal::Mode::HexOnce, command,
+		              " not ACKed by device #", num, "!");
+		return;
+	}
 }
 
 u8 PS2::readFromDevice(u8 num) {
@@ -59,6 +70,61 @@ u8 PS2::readFromDevice(u8 num) {
 u8 PS2::readConfiguration() {
 	sendCommand(0x20);
 	return readResponse();
+}
+
+void PS2::initDevice(u8 num) {
+	u8 enable   = 0xAE;
+	u8 portTest = 0xAB;
+	u8 irq      = 1;
+	if(num == 1) {
+		enable   = 0xA8;
+		portTest = 0xA9;
+		irq      = 12;
+	}
+	PROMPT_INIT("PS2 - Device", Blue);
+	PROMPT("Performing port test for device #", num, "..");
+	sendCommand(portTest);
+	u8 status = readResponse();
+	if(status == 0x00) {
+		PROMPT("Device #", num, " port test passed!");
+	} else {
+		PROMPT("Device #", num, " port test FAILED!");
+		return;
+	}
+	PROMPT("Enabling device #", num, "..");
+	sendCommand(enable);
+	PROMPT("Sending reset to device #", num, "..");
+	sendToDevice(num, 0xFF);
+	status = readFromDevice(num);
+	if(status != 0xAA) {
+		Terminal::err("Device #", num, " reset failed!");
+		return;
+	}
+	PROMPT("Device #", num, " reset successful!");
+	// some devices may send additional data after reset, read those now
+	if(PS2::readyForOutput())
+		readFromDevice(num);
+
+	PROMPT("Sending DISABLE_SCAN to device #", num, "..");
+	sendToDevice(num, 0xF5);
+	PROMPT("Sending IDENTIFY to device #", num, "..");
+	sendToDevice(num, 0xF2);
+	u8 type = readFromDevice(num);
+	if(type == 0x0) {
+		PROMPT("Identified device #", num, " as Standard PS/2 mouse!");
+	} else if(type == 0xAB || type == 0xAC) {
+		u8 oldtype = type;
+		type       = readFromDevice(num);
+		PROMPT("Device type 0xAB ", Terminal::Mode::HexOnce, type, "!");
+		if(oldtype == 0xAB && type == 0x83) {
+			PROMPT("Keyboard found!");
+			PROMPT("Installing keyboard handler..");
+			IRQ::installHandler(irq, Keyboard::handleKeyboard);
+		}
+	} else
+		PROMPT("Device type ", Terminal::Mode::HexOnce, type, "!");
+	PROMPT("Sending ENABLE_SCAN to device #", num, "..");
+	sendToDevice(num, 0xF4);
 }
 
 void PS2::init() {
@@ -75,9 +141,9 @@ void PS2::init() {
 	// reconfig controller
 	PROMPT("Reading controller configuration..");
 	u8 currentConfig = readConfiguration();
-	// 10111100
+	PROMPT("Current configuration: ", Terminal::Mode::HexOnce, currentConfig);
 	// disable interrupts for now, and disable translation
-	currentConfig &= 0xAB;
+	currentConfig &= 0xb4;
 	if(currentConfig & 0x20) {
 		PROMPT("Dual channel controller found!");
 		hasSecondChannel = true;
@@ -97,12 +163,15 @@ void PS2::init() {
 	// Re-write back modified config
 	PROMPT("Rewriting controller configuration..");
 	sendCommand(0x60, currentConfig);
+	currentConfig = readConfiguration();
+	PROMPT("Current device configuration: ", Terminal::Mode::HexOnce,
+	       currentConfig, "!");
 	// determine if there are actually two channels
 	if(hasSecondChannel) {
 		PROMPT("Determining second channel..");
 		sendCommand(0xA8);
 		response = readConfiguration();
-		if(response & 0x10) {
+		if(response & 0x20) {
 			hasSecondChannel = false;
 			PROMPT("Second channel is non-functional!");
 		} else {
@@ -110,56 +179,24 @@ void PS2::init() {
 		}
 		sendCommand(0xA7);
 	}
-	// perform interface tests
-	PROMPT("Performing interface tests..");
-	sendCommand(0xAB);
-	u8 result = readResponse();
-	if(result == 0x00) {
-		PROMPT("First port test passed!");
-	}
-	sendCommand(0xA9);
-	result = readResponse();
-	if(result == 0x00) {
-		PROMPT("Second port test passed!");
-	}
+
 	// enable devices
-	PROMPT("Enabling device #0..");
-	sendCommand(0xAE);
-	PROMPT("Sending reset to device #0..");
-	sendToDevice(0, 0xFF);
-	u8 ack = readFromDevice(0);
-	if(ack == 0xFA) {
-		u8 status = readFromDevice(0);
-		if(status == 0xAA) {
-			PROMPT("Device #0 reset successful!");
-		} else
-			PROMPT("Device #0 reset FAILED!");
-	} else {
-		PROMPT("Device #0 reset NACK!");
-	}
+	PROMPT("Enabling devices..");
+	initDevice(0);
 	PROMPT("Disabling device #0..");
 	sendCommand(0xAD);
 
-	PROMPT("Enabling device #1..");
-	sendCommand(0xA8);
-	PROMPT("Sending reset to device #1..");
-	sendToDevice(1, 0xFF);
-	ack = readFromDevice(1);
-	if(ack == 0xFA) {
-		u8 status = readFromDevice(1);
-		if(status == 0xAA) {
-			PROMPT("Device #1 reset successful!");
-		} else
-			PROMPT("Device #1 reset FAILED!");
-	} else {
-		PROMPT("Device #1 reset NACK!");
-	}
+	if(hasSecondChannel)
+		initDevice(1);
+
 	// enable device 0
 	PROMPT("Enabling device #0 back..");
 	sendCommand(0xAE);
 	// enable interrupts
 	PROMPT("Enabling device interrupts..");
-	currentConfig |= 02; // enable first two bits
+	currentConfig = readConfiguration();
+	currentConfig |= 0x03; // enable first two bits
 	sendCommand(0x60, currentConfig);
+
 	Terminal::done("PS2 initialization complete!");
 }
