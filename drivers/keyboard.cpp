@@ -1,5 +1,5 @@
 #include <drivers/io.h>
-#include <drivers/keycodes.h>
+#include <drivers/keyboard.h>
 
 const char *Keycodes::getKey(u8 c) {
 	switch(c) {

@@ -5,7 +5,7 @@
 #include <arch/x86/kernel_layout.h>
 #include <boot/multiboot.h>
 #include <drivers/io.h>
-#include <drivers/keycodes.h>
+#include <drivers/keyboard.h>
 #include <drivers/terminal.h>
 #include <drivers/timer.h>
 #include <mem/memory.h>
