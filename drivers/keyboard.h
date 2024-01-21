@@ -4,7 +4,7 @@
 #include <sys/system.h>
 
 struct Keyboard {
-	static void init();
+	static void init(u8 deviceNum);
 	static void getCharacter();
 
 	enum Key : int {

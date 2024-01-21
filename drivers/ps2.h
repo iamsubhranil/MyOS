@@ -14,11 +14,14 @@ struct PS2 {
 	static u8 readResponse();
 	static u8 readConfiguration();
 
-	static void sendToDevice(u8 num, u8 command);
+	static void sendToDevice(u8 num, u8 command, bool hasData = false,
+	                         u8 data = 0);
 	static u8   readFromDevice(u8 num);
 
 	static bool readyForInput();
+	static bool readyForInputWithDelay();
 	static bool readyForOutput();
+	static bool readyForOutputWithDelay();
 
 	static void initDevice(u8 num);
 };

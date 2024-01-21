@@ -26,8 +26,22 @@ bool PS2::readyForInput() {
 	return ~(readStatusRegister() & 0x02);
 }
 
+bool PS2::readyForInputWithDelay() {
+	u64 tsc = Asm::rdtsc();
+	while((Asm::rdtsc() - tsc) < 1000000 || !readyForInput())
+		;
+	return readyForInput();
+}
+
 bool PS2::readyForOutput() {
 	return readStatusRegister() & 0x01;
+}
+
+bool PS2::readyForOutputWithDelay() {
+	u64 tsc = Asm::rdtsc();
+	while((Asm::rdtsc() - tsc) < 1000000 || !readyForOutput())
+		;
+	return readyForOutput();
 }
 
 u8 PS2::readResponse() {
@@ -36,24 +50,34 @@ u8 PS2::readResponse() {
 	return Asm::inb(0x60);
 }
 
-void PS2::sendToDevice(u8 num, u8 command) {
+void PS2::sendToDevice(u8 num, u8 command, bool hasData, u8 data) {
 	if(num == 1) {
 		sendCommand(0xD4);
 	}
-	u64 tsc = Asm::rdtsc();
-	while((Asm::rdtsc() - tsc) < 1000000 || !readyForInput())
-		;
-	if(!readyForInput()) {
+	if(!readyForInputWithDelay()) {
 		Terminal::err("Unable to send command ", Terminal::Mode::HexOnce,
 		              command, " to device #", num);
 		return;
 	}
 	Asm::outb(0x60, command);
+	if(hasData) {
+		if(!readyForInputWithDelay()) {
+			Terminal::err("Unable to send data ", Terminal::Mode::HexOnce, data,
+			              " to device #", num);
+			return;
+		}
+		if(num == 1) {
+			sendCommand(0xD4);
+			if(!readyForInputWithDelay()) {
+				Terminal::err("Unable to send data ", Terminal::Mode::HexOnce,
+				              data, " to device #", num);
+				return;
+			}
+		}
+		Asm::outb(0x60, data);
+	}
 	// wait for ACK
-	tsc = Asm::rdtsc();
-	while((Asm::rdtsc() - tsc) < 1000000 || !readyForInput())
-		;
-	if(!readyForInput() || readFromDevice(num) != 0xFA) {
+	if(!readyForOutputWithDelay() || readFromDevice(num) != 0xFA) {
 		Terminal::err("Command ", Terminal::Mode::HexOnce, command,
 		              " not ACKed by device #", num, "!");
 		return;
@@ -119,6 +143,7 @@ void PS2::initDevice(u8 num) {
 		if(oldtype == 0xAB && type == 0x83) {
 			PROMPT("Keyboard found!");
 			PROMPT("Installing keyboard handler..");
+			Keyboard::init(num);
 			IRQ::installHandler(irq, Keyboard::handleKeyboard);
 		}
 	} else

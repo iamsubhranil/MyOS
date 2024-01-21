@@ -1,6 +1,7 @@
 #include <arch/x86/irq.h>
 #include <drivers/io.h>
 #include <drivers/keyboard.h>
+#include <drivers/ps2.h>
 #include <drivers/terminal.h>
 #include <ds/queue.h>
 
@@ -243,5 +244,6 @@ void Keyboard::handleKeyboard(Register *r) {
 	Terminal::info("Read: ", Terminal::Mode::HexOnce, byte, "\n");
 }
 
-void Keyboard::init() {
+void Keyboard::init(u8 deviceNum) {
+	(void)deviceNum;
 }
