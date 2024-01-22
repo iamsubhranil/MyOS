@@ -23,7 +23,7 @@ u8 PS2::readStatusRegister() {
 
 bool PS2::readyForInput() {
 	// check if bit 1 is clear
-	return ~(readStatusRegister() & 0x02);
+	return !((readStatusRegister() >> 1) & 0x01);
 }
 
 bool PS2::readyForInputWithDelay() {
