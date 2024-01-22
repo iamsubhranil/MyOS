@@ -148,6 +148,7 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	Scheduler::init();
 	PS2::init();
 
+#ifdef DEBUG
 	for(i32 i = 0; i < 100; i++) {
 		Terminal::write("Line: ", i, "\n");
 	}
@@ -172,20 +173,15 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 		Memory::free(c);
 		Terminal::prompt(Terminal::Color::Blue, "Kernel",
 		                 "Releasing the u32..");
-		// Timer::wait(Timer::frequency);
-		// Terminal::prompt(Terminal::Color::Blue, "Kernel", "Waited for 1
-		// seconds!");
 		break;
-		// while(1)
-		//	;
 	}
 	Terminal::write("\n");
 	Terminal::write(Terminal::Mode::Dec);
 	Scheduler::submit(finishableTask);
 	addFibTask();
-	// Scheduler::submit(calcFib, (u32)2);
 	Scheduler::submit(sleepTask);
-	// writeSomething(0, 1, 2, 3, 4, 5, 6, 7);
+#endif
+	Terminal::write(">> ");
 	asm volatile("1: hlt; jmp 1b");
 }
 
