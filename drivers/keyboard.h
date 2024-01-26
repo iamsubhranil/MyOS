@@ -5,7 +5,8 @@
 
 struct Keyboard {
 	static void init(u8 deviceNum);
-	static void getCharacter();
+	// blockOnZero blocks the caller until the next non zero ASCII
+	static char getCharacter(bool blockOnZero = false);
 
 	enum Key : int {
 		Num_0 = '0',
@@ -20,10 +21,10 @@ struct Keyboard {
 		Num_9 = '9',
 
 		Char_A = 'A',
-		Char_a = 'a'
+		Char_a = 'a',
+
+		Key_BreakCode
 	};
-	static const char *getKey(u8 scancode);
-	static const char *getSecondKey(u8 firstScancode);
 
 	static void handleKeyboard(Register *r);
 };

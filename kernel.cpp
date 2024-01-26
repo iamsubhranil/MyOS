@@ -5,6 +5,7 @@
 #include <arch/x86/kernel_layout.h>
 #include <boot/multiboot.h>
 #include <drivers/io.h>
+#include <drivers/keyboard.h>
 #include <drivers/ps2.h>
 #include <drivers/terminal.h>
 #include <drivers/timer.h>
@@ -125,6 +126,28 @@ void finishableTask() {
 	Terminal::write("In finishable task..\n");
 }
 
+void shellTask() {
+	Terminal::write("\n\n");
+	Terminal::write(">> _\b");
+	while(true) {
+		char c = Keyboard::getCharacter(true);
+		if(c == '\b') {
+			Terminal::write(" \b\b_\b");
+		} else {
+			if(c == '\n') {
+				Terminal::write(" ");
+			}
+			Terminal::write(c);
+			if(c != '\n') {
+				Terminal::write("_\b");
+			}
+		}
+		if(c == '\n') {
+			Terminal::write(">> _\b");
+		}
+	}
+}
+
 // entry-point
 void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	(void)stack_;
@@ -181,7 +204,7 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	addFibTask();
 	Scheduler::submit(sleepTask);
 #endif
-	Terminal::write(">> ");
+	Scheduler::submit(shellTask);
 	asm volatile("1: hlt; jmp 1b");
 }
 

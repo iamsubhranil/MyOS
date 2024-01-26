@@ -21,14 +21,14 @@ struct Asm {
 		asm("sti");
 	};
 
-	static inline u8 inb(u16 port) {
-		u8 ret;
-		asm("inb %1, %0" : "=a"(ret) : "Nd"(port));
+	static inline u8 inb(volatile u16 port) {
+		volatile u8 ret;
+		asm volatile("inb %1, %0" : "=a"(ret) : "Nd"(port));
 		return ret;
 	}
 
-	static inline void outb(u16 port, u8 val) {
-		asm("outb %0, %1" : : "a"(val), "Nd"(port));
+	static inline void outb(volatile u16 port, volatile u8 val) {
+		asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
 		/* There's an outb %al, $imm8  encoding, for compile-time constant port
 		 * numbers that fit in 8b.  (N constraint). Wider immediate constants
 		 * would be truncated at assemble-time (e.g. "i" constraint). The  outb
