@@ -630,32 +630,32 @@ struct ScancodeHandler {
 				case 0x11: {
 					// Left_Alt released
 					modifierReleased(Key::Left_Alt);
-					return true;
+					return false;
 				}
 				case 0x12: {
 					// Left_Shift released
 					modifierReleased(Key::Left_Shift);
-					return true;
+					return false;
 				}
 				case 0x14: {
 					// Left_Control released
 					modifierReleased(Key::Left_Control);
-					return true;
+					return false;
 				}
 				case 0x58: {
 					// Capslock released
 					modifierReleased(Key::Capslock);
-					return true;
+					return false;
 				}
 				case 0x59: {
 					// Right_Shift released
 					modifierReleased(Key::Right_Shift);
-					return true;
+					return false;
 				}
 				case 0x77: {
 					// Numberlock released
 					modifierReleased(Key::Numberlock);
-					return true;
+					return false;
 				}
 				default: {
 					state = KeyLevel0;
@@ -699,12 +699,12 @@ struct ScancodeHandler {
 				case 0x11: {
 					// Right_Alt released
 					modifierReleased(Key::Right_Alt);
-					return true;
+					return false;
 				}
 				case 0x14: {
 					// Right_Control released
 					modifierReleased(Key::Right_Control);
-					return true;
+					return false;
 				}
 				case 0x7C: {
 					lastLevelCode = 0x7C;
@@ -891,9 +891,11 @@ struct ScancodeHandler {
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ')', '!', '@', '#', 
 				'$', '%', '^', '&', '*', '(', ')', '!', '@', '#', '$', '%', '^', '&', '*', 
-				'(', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '?', '`', '<', '>', '+', '|', '?', '>', 
-				'_', 0, 0, '_', ':', 0, 0, 0, 0, };
-			res = shiftTable[k];
+				'(', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '?', '~', '<', '>', '+', '|', '?', '>', 
+				'_', 0, 0, '_', ':', '"', '}', '{', 0, };
+			if (shiftTable[k] != 0) {
+				res = shiftTable[k];
+			}
 		}
 		return res;
 	}

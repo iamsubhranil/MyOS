@@ -22,9 +22,9 @@ MODIFIERS = ["Left_Control", "Right_Control", "Left_Alt", "Right_Alt", "Numberlo
 HASASCII = {"Space": ' ', "Tab": "\\t", "Backspace": "\\b", "Enter": "\\n"}
 
 SHIFTMAPPING = {
-    "Backtick": "`", "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&",
-    "8": "*", "9": "(", "0": ")", "SquareOpen": "{", "SquareClose": "}", "Semicolon": ":",
-    "Forwardslash": "|", "SingleQuote": "\"", "Comma": "<", "Dot": ">", "Backslash": "?",
+    "Backtick": "~", "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&",
+    "8": "*", "9": "(", "0": ")", "Squareopen": "{", "Squareclose": "}", "Semicolon": ":",
+    "Forwardslash": "|", "Singlequote": "\"", "Comma": "<", "Dot": ">", "Backslash": "?",
     "Minus": "_", "Equals": "+"
 }
 
@@ -97,7 +97,7 @@ def generate_states(levelStates, level, enumNames, source):
                         source.print("case ", k + ": {")
                         source.print("// ", enum, " released")
                         source.print("modifierReleased(Key::" + enum + ");")
-                        source.print("return true;")
+                        source.print("return false;")
                         source.print("}")
             else:
                 source.print("case ", k + ": {")
@@ -274,7 +274,9 @@ def main(input_, output):
         else:
             source.print("0", end=", ")
     source.print("};")
+    source.print("if (shiftTable[k] != 0) {")
     source.print("res = shiftTable[k];")
+    source.print("}")
     source.print("}")
 
     source.print("return res;")
