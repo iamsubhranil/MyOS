@@ -11,6 +11,7 @@
 #include <drivers/timer.h>
 #include <mem/memory.h>
 #include <mem/paging.h>
+#include <misc/shell.h>
 #include <sched/scheduler.h>
 #include <sched/task.h>
 #include <sys/stacktrace.h>
@@ -126,28 +127,6 @@ void finishableTask() {
 	Terminal::write("In finishable task..\n");
 }
 
-void shellTask() {
-	Terminal::write("\n\n");
-	Terminal::write(">> _\b");
-	while(true) {
-		char c = Keyboard::getCharacter(true);
-		if(c == '\b') {
-			Terminal::write(" \b\b_\b");
-		} else {
-			if(c == '\n') {
-				Terminal::write(" ");
-			}
-			Terminal::write(c);
-			if(c != '\n') {
-				Terminal::write("_\b");
-			}
-		}
-		if(c == '\n') {
-			Terminal::write(">> _\b");
-		}
-	}
-}
-
 // entry-point
 void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	(void)stack_;
@@ -204,7 +183,8 @@ void kernelMain(Multiboot *mboot, uptr stack_, uptr useless0, uptr useless1) {
 	addFibTask();
 	Scheduler::submit(sleepTask);
 #endif
-	Scheduler::submit(shellTask);
+	Shell::init();
+	Scheduler::submit(Shell::run);
 	asm volatile("1: hlt; jmp 1b");
 }
 

@@ -4,6 +4,8 @@
 
 extern "C" {
 extern siz strlen(const char *str);
+int        strcmp(const char *s1, const char *s2);
+#define strncmp(s1, s2, size) memcmp(s1, s2, size)
 // arch/x86/memset.S
 // memset automatically copies in 4byte chunks if required.
 // size is always in bytes, and must be prealigned
