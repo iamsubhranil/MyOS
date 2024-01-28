@@ -1,37 +1,62 @@
 #pragma once
 
+#include <sys/myos.h>
+
 struct Shell {
+	struct Command {
+		const char *command;
+		void       *handler;
+		int (*handle)(const char *args, int length, void *handler);
+	};
+
+	struct Line {
+		const char *source;
+		int         length;
+		int         current;
+		int         hasError; // 0 - no error
+		                      // 1 - insufficient arguments
+		                      // 2 - incorrect argument type
+		                      // 3 - extra arguments
+		u32 dump() const;
+	};
+
+	template <typename T> struct Verifier {
+		static bool isnum(char c) {
+			return c >= '0' && c <= '9';
+		}
+		static T verify(Line &source);
+	};
+
+	template <typename... T>
+	static int execWrapper(Line &l, void *exec, const T &...args) {
+		if(l.hasError) {
+			return l.hasError;
+		} else if(l.current != l.length) {
+			l.hasError = 3;
+			return l.hasError;
+		}
+		((void (*)(T...))(exec))(args...);
+		return 0;
+	}
+
 	static void init();
 	static void run();
 
-	template <typename T> class Verifier {
-		static bool verify(const char *source, int start, int &end, T &result);
-	};
+	static Command *commands;
+	static int      numCommands;
 
-	template <> class Verifier<int> {
-		static bool isnum(char i) {
-			return i >= '0' && i <= '9';
-		}
+	static void processBuffer(const char *buf, int len);
+	static void registerCommand(Command c);
 
-		static bool verify(const char *source, int start, int &end,
-		                   int &result) {
-			int bak = start;
-			while(source[start] != 0 && isnum(source[start])) {
-				start++;
-			}
-			if(start == bak)
-				return false;
-			if(source[start] != 0 && source[start] != ' ') {
-				return false;
-			}
-			result = 0;
-			for(int i = bak; i < start; i++) {
-				result *= 10;
-				result += source[i] - '0';
-			}
-			while(source[start] != 0 && source[start] == ' ') start++;
-			end = start;
-			return true;
-		}
-	};
+	template <typename... T>
+	static void addCommand(const char *cmd, void (*exec)(T...)) {
+		Command c;
+		c.handler = (void *)exec;
+		c.command = cmd;
+		c.handle  = [](const char *s, int length, void *exec1) {
+            Line l = {s, length, 0, 0};
+            return execWrapper(l, exec1, Verifier<T>::verify(l)...);
+		};
+		registerCommand(c);
+	}
 };
