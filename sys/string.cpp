@@ -1,8 +1,17 @@
 #include <drivers/terminal.h>
+#include <mem/memory.h>
 #include <sys/stacktrace.h>
 #include <sys/string.h>
 
 extern "C" {
+
+char *strdup(const char *str) {
+	siz   len = strlen(str);
+	char *s   = (char *)Memory::alloc(sizeof(char) * (len + 1));
+	memcpy(s, str, sizeof(char) * len);
+	s[len] = 0;
+	return s;
+}
 
 void *memmove(void *dest, const void *source, siz size) {
 	u8 *dest8   = (u8 *)dest;
@@ -49,4 +58,9 @@ void abort() {
 	Terminal::err("abort() called!");
 	Stacktrace::print();
 }
+}
+
+u32 StringSlice::dump() const {
+	for(int i = start; i < end; i++) Terminal::write(s[i]);
+	return end - start;
 }
