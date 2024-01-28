@@ -105,6 +105,9 @@ struct Terminal {
 	static u32 write(const u8 &value) {
 		return write((u64)value);
 	}
+	static u32 write(const int value) {
+		return write((i64)value);
+	}
 	static u32 write(const i64 &value);
 	static u32 write(const i32 &value) {
 		return write((i64)value);
@@ -156,12 +159,13 @@ struct Terminal {
 		return write_helper(0, arg, args...);
 	}
 
-	static void prompt_internal(Color foreground, const char *prompt) {
+	template <typename T>
+	static void prompt_internal(Color foreground, const T &prompt) {
 		write("[ ", foreground, prompt, Color::Reset, " ] ");
 	}
 
-	template <typename... T>
-	static void prompt(Color foreground, const char *prompt, const T &...args) {
+	template <typename S, typename... T>
+	static void prompt(Color foreground, const S &prompt, const T &...args) {
 		prompt_internal(foreground, prompt);
 		write(args..., '\n');
 	}
